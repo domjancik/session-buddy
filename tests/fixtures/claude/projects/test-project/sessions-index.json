@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "11111111-1111-1111-1111-111111111111",
+      "fullPath": "tests/fixtures/claude/projects/test-project/11111111-1111-1111-1111-111111111111.jsonl",
+      "fileMtime": 1780000000000,
+      "firstPrompt": "Fix webhook retry routing",
+      "summary": "Webhook retry routing fix",
+      "messageCount": 2,
+      "created": "2026-06-09T10:00:00.000Z",
+      "modified": "2026-06-09T10:05:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/Users/example/dev/acme-mono",
+      "isSidechain": false
+    }
+  ],
+  "originalPath": "/Users/example/dev/acme-mono"
+}

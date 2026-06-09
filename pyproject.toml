@@ -1,0 +1,27 @@
+[project]
+name = "session-search"
+version = "0.1.0"
+description = "Search and resume local Claude and Codex sessions."
+requires-python = ">=3.11"
+dependencies = [
+    "textual>=0.89",
+]
+
+[project.optional-dependencies]
+semantic = [
+    "numpy>=1.26",
+    "sentence-transformers>=3.0",
+]
+test = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+session-search = "session_search.cli:main"
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

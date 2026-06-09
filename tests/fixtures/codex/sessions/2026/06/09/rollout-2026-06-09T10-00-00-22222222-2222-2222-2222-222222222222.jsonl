@@ -1,0 +1,3 @@
+{"timestamp":"2026-06-09T10:00:00.000Z","type":"session_meta","payload":{"id":"22222222-2222-2222-2222-222222222222","cwd":"/Users/example/dev/session-search","source":"vscode","model_provider":"openai","git":{"branch":"feature/search"}}}
+{"timestamp":"2026-06-09T10:01:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Build session search with fuzzy matching"}]}}
+{"timestamp":"2026-06-09T10:02:00.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I will implement indexing, FTS, fuzzy scoring, and resume commands."}]}}
