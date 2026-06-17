@@ -38,7 +38,7 @@ The index is stored at `.session-search/index.sqlite`.
 uv run session-search status
 ```
 
-Status reports new, changed, deleted, and unchanged session sources. A source is considered changed when its transcript file changes or when provider metadata changes, such as Claude `sessions-index.json` or Codex `state_5.sqlite` / `session_index.jsonl`.
+Status reports new, changed, deleted, and unchanged session sources. A source is considered changed when its transcript file changes or when provider metadata changes, such as Claude `sessions-index.json` or Codex per-session thread/index metadata.
 
 ## Search
 

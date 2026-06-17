@@ -102,7 +102,7 @@ Freshness checks detect:
 - Changed transcript file mtime or size.
 - Deleted transcript files.
 - Claude metadata changes in per-project `sessions-index.json`.
-- Codex metadata changes in stable metadata files: `state_5.sqlite` and `session_index.jsonl`.
+- Codex metadata changes in per-session thread/index rows loaded from `state_5.sqlite` and `session_index.jsonl`.
 
 `search` and `tui` warn when the index is stale. Both support `--auto-index`, which updates changed sources and prunes deleted index entries before running. Auto-index is off by default.
 

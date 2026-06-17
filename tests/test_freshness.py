@@ -56,7 +56,10 @@ def test_incremental_index_reindexes_after_metadata_change(tmp_path: Path) -> No
     codex_home = workspace / "codex"
 
     index_all(db_path, claude_home, codex_home, semantic_backend="hash")
-    bump_mtime(codex_home / "session_index.jsonl")
+    (codex_home / "session_index.jsonl").write_text(
+        '{"id":"22222222-2222-2222-2222-222222222222","thread_name":"Renamed session search","updated_at":"2026-06-09T10:02:00.000Z"}\n',
+        encoding="utf-8",
+    )
 
     stale = check_index_freshness(db_path, claude_home, codex_home)
     assert stale.changed_metadata == 1
