@@ -29,6 +29,7 @@ class SessionRecord:
     first_prompt: str
     summary: str
     preview: str
+    metadata_fingerprint: str = ""
     messages: list[MessageRecord] = field(default_factory=list)
 
 
@@ -53,5 +54,6 @@ class SourceState:
     source_path: str
     file_mtime: int
     file_size: int
+    metadata_fingerprint: str
     session_id: str
     provider: str

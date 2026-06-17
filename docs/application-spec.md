@@ -28,6 +28,7 @@ The system is private by default: indexing and search run locally, and no sessio
 ### CLI
 
 - `session-search index`: scan local session stores and build/update `.session-search/index.sqlite`.
+- `session-search status`: report new, changed, deleted, and unchanged source files.
 - `session-search search <query>`: print ranked results with provider, score, updated time, title, cwd, id, branch, and snippets.
 - `session-search tui [query]`: open the Textual terminal UI.
 - `session-search resume <provider> <session_id>`: resume an indexed session.
@@ -39,6 +40,7 @@ The TUI is implemented with Textual.
 - Search input accepts normal text without stealing printable letters.
 - Results table shows provider, score, updated time, title, and folder.
 - Preview pane shows provider, session id, title, folder, branch, and snippets.
+- Index-status banner shows whether the local index is stale.
 - Controls:
   - `Enter`: search
   - `Up/Down`: move through results
@@ -88,6 +90,21 @@ The local index lives at `.session-search/index.sqlite`.
 - `session_fts`: SQLite FTS5 table for title, cwd, prompt, summary, and preview.
 - `embeddings`: per-session text chunks and local embedding vectors.
 - `source_state`: source file path, mtime, size, and indexed session id for incremental indexing.
+- Metadata fingerprints are stored per source so metadata-only changes are detected.
+
+## Freshness Behavior
+
+`session-search status`, `search`, and `tui` compare the current local session stores to the saved `source_state`.
+
+Freshness checks detect:
+
+- New transcript JSONL files.
+- Changed transcript file mtime or size.
+- Deleted transcript files.
+- Claude metadata changes in per-project `sessions-index.json`.
+- Codex metadata changes in stable metadata files: `state_5.sqlite` and `session_index.jsonl`.
+
+`search` and `tui` warn when the index is stale. Both support `--auto-index`, which updates changed sources and prunes deleted index entries before running. Auto-index is off by default.
 
 ## Search Behavior
 
@@ -136,8 +153,11 @@ uv run --extra test pytest -q
 ## Acceptance Criteria
 
 - `session-search index --semantic-backend hash` indexes local Claude/Codex sessions without parser failures.
+- `session-search status` reports stale index state, including metadata-only changes.
+- `session-search search "<query>" --auto-index` updates stale sources before returning results.
 - `session-search search "<query>"` returns relevant sessions with cwd and snippets.
-- `session-search tui` opens a Textual UI and allows normal query typing.
+- `session-search tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
+- `session-search tui --auto-index` updates stale sources before opening the UI.
 - `Ctrl-R` in the TUI resumes the selected session or warns clearly when the indexed cwd is stale.
 - `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
 - Tests pass locally.

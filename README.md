@@ -32,12 +32,23 @@ By default this scans:
 
 The index is stored at `.session-search/index.sqlite`.
 
+## Index Status
+
+```sh
+uv run session-search status
+```
+
+Status reports new, changed, deleted, and unchanged session sources. A source is considered changed when its transcript file changes or when provider metadata changes, such as Claude `sessions-index.json` or Codex `state_5.sqlite` / `session_index.jsonl`.
+
 ## Search
 
 ```sh
 uv run session-search search "webhook retry"
 uv run session-search search "acme-mono" --provider codex --limit 20
+uv run session-search search "routing" --auto-index
 ```
+
+Search warns when the index is stale. Pass `--auto-index` to update changed sources and prune deleted index entries before searching.
 
 ## TUI
 
@@ -45,7 +56,10 @@ The terminal UI is built with Textual.
 
 ```sh
 uv run session-search tui
+uv run session-search tui --auto-index
 ```
+
+The TUI shows an index-status banner on startup. Pass `--auto-index` to update changed sources and prune deleted index entries before opening the interface.
 
 Keys:
 

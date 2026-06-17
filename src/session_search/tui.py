@@ -21,8 +21,14 @@ CONTROL_BINDINGS = (
 )
 
 
-def run_tui(db_path: Path, initial_query: str = "", provider: str | None = None, cwd_filter: str | None = None) -> None:
-    app = SessionSearchApp(db_path, initial_query, provider, cwd_filter)
+def run_tui(
+    db_path: Path,
+    initial_query: str = "",
+    provider: str | None = None,
+    cwd_filter: str | None = None,
+    index_status: str = "",
+) -> None:
+    app = SessionSearchApp(db_path, initial_query, provider, cwd_filter, index_status)
     command = app.run()
     if command is not None:
         prepared = prepare_resume_command(command)
@@ -48,6 +54,12 @@ class SessionSearchApp(App[ResumeCommand | None]):
         height: 1;
         margin: 0 1;
         color: $text-muted;
+    }
+
+    #index-status {
+        height: 1;
+        margin: 0 1;
+        color: $warning;
     }
 
     #body {
@@ -76,12 +88,14 @@ class SessionSearchApp(App[ResumeCommand | None]):
         initial_query: str = "",
         provider: str | None = None,
         cwd_filter: str | None = None,
+        index_status: str = "",
     ) -> None:
         super().__init__()
         self.db_path = db_path
         self.initial_query = initial_query
         self.provider = provider
         self.cwd_filter = cwd_filter
+        self.index_status = index_status
         self.results: list[SearchResult] = []
         self.selected_index = 0
         self.preview_visible = True
@@ -89,6 +103,7 @@ class SessionSearchApp(App[ResumeCommand | None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Input(value=self.initial_query, placeholder="Search sessions, then press Enter", id="query")
+        yield Static(self.index_status, id="index-status")
         yield Static("Enter search | Up/Down move | Ctrl-P preview | Ctrl-R resume | Ctrl-U clear | Esc quit", id="status")
         with Horizontal(id="body"):
             yield DataTable(id="results")

@@ -91,6 +91,7 @@ class IndexDatabase:
                 session_id text not null,
                 file_mtime integer not null,
                 file_size integer not null,
+                metadata_fingerprint text not null default '',
                 indexed_at integer not null
             );
 
@@ -101,11 +102,17 @@ class IndexDatabase:
             create index if not exists idx_embeddings_backend on embeddings(backend);
             """
         )
+        self.ensure_column("source_state", "metadata_fingerprint", "text not null default ''")
         self.conn.commit()
+
+    def ensure_column(self, table: str, column: str, definition: str) -> None:
+        columns = {row["name"] for row in self.conn.execute(f"pragma table_info({table})")}
+        if column not in columns:
+            self.conn.execute(f"alter table {table} add column {column} {definition}")
 
     def source_state(self, source_path: str) -> SourceState | None:
         row = self.conn.execute(
-            "select source_path, file_mtime, file_size, session_id, provider from source_state where source_path = ?",
+            "select source_path, file_mtime, file_size, metadata_fingerprint, session_id, provider from source_state where source_path = ?",
             (source_path,),
         ).fetchone()
         if row is None:
@@ -114,9 +121,26 @@ class IndexDatabase:
             source_path=row["source_path"],
             file_mtime=int(row["file_mtime"]),
             file_size=int(row["file_size"]),
+            metadata_fingerprint=str(row["metadata_fingerprint"] or ""),
             session_id=row["session_id"],
             provider=row["provider"],
         )
+
+    def source_states(self) -> list[SourceState]:
+        rows = self.conn.execute(
+            "select source_path, file_mtime, file_size, metadata_fingerprint, session_id, provider from source_state"
+        ).fetchall()
+        return [
+            SourceState(
+                source_path=row["source_path"],
+                file_mtime=int(row["file_mtime"]),
+                file_size=int(row["file_size"]),
+                metadata_fingerprint=str(row["metadata_fingerprint"] or ""),
+                session_id=row["session_id"],
+                provider=row["provider"],
+            )
+            for row in rows
+        ]
 
     def upsert_session(self, record: SessionRecord, embedder: Embedder | None) -> None:
         with self.conn:
@@ -192,13 +216,14 @@ class IndexDatabase:
                         )
             self.conn.execute(
                 """
-                insert into source_state(source_path, provider, session_id, file_mtime, file_size, indexed_at)
-                values (?, ?, ?, ?, ?, ?)
+                insert into source_state(source_path, provider, session_id, file_mtime, file_size, metadata_fingerprint, indexed_at)
+                values (?, ?, ?, ?, ?, ?, ?)
                 on conflict(source_path) do update set
                     provider = excluded.provider,
                     session_id = excluded.session_id,
                     file_mtime = excluded.file_mtime,
                     file_size = excluded.file_size,
+                    metadata_fingerprint = excluded.metadata_fingerprint,
                     indexed_at = excluded.indexed_at
                 """,
                 (
@@ -207,6 +232,7 @@ class IndexDatabase:
                     record.session_id,
                     record.file_mtime,
                     record.file_size,
+                    record.metadata_fingerprint,
                     int(time.time() * 1000),
                 ),
             )
