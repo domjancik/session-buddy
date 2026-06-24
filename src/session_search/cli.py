@@ -8,6 +8,7 @@ from .indexer import check_index_freshness, index_all
 from .resume import load_resume_command, prepare_resume_command, run_resume
 from .search import format_result_line, search_sessions
 from .text import format_time
+from .tmux import build_tmux_pane_command, open_tmux_pane
 from .tui import run_tui
 
 
@@ -65,6 +66,13 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--cwd", help="Override indexed cwd.")
     resume_parser.add_argument("--print-command", action="store_true", help="Print the command instead of running it.")
     resume_parser.add_argument("--exec", action="store_true", help="Replace this process with Claude/Codex.")
+    resume_parser.add_argument("--tmux-pane", action="store_true", help="Open the resume command in a tmux split pane.")
+    resume_parser.add_argument(
+        "--tmux-split",
+        choices=["right", "down"],
+        default="right",
+        help="Direction for --tmux-pane. Defaults to right.",
+    )
     resume_parser.set_defaults(func=cmd_resume)
     return parser
 
@@ -166,12 +174,16 @@ def handle_freshness_for_process(args: argparse.Namespace, auto_index: bool, sem
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
+    if args.exec and args.tmux_pane:
+        print("--exec cannot be used with --tmux-pane", file=sys.stderr)
+        return 2
+
     try:
         command = load_resume_command(args.db, args.provider, args.session_id, cwd_override=args.cwd)
     except KeyError as error:
         print(str(error), file=sys.stderr)
         return 1
-    if args.print_command:
+    if args.print_command or args.tmux_pane:
         try:
             prepared = prepare_resume_command(command)
         except RuntimeError as error:
@@ -179,7 +191,17 @@ def cmd_resume(args: argparse.Namespace) -> int:
             return 1
         for warning in prepared.warnings:
             print(warning, file=sys.stderr)
-        print(prepared.shell_line())
+        if args.print_command:
+            if args.tmux_pane:
+                print(build_tmux_pane_command(prepared, split=args.tmux_split).shell_line())
+            else:
+                print(prepared.shell_line())
+            return 0
+        try:
+            open_tmux_pane(prepared, split=args.tmux_split)
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 1
         return 0
     try:
         return run_resume(command, replace_process=args.exec)

@@ -65,22 +65,23 @@ Keys:
 
 - Type a query and press `Enter` to search.
 - Use arrow keys to move through results.
-- Press `Ctrl-R` to resume the selected session in the embedded terminal pane.
+- Press `Ctrl-R` to resume the selected session in a tmux split pane.
 - Press `Ctrl-O` to resume the selected session externally in the normal terminal.
 - Press `Ctrl-P` to toggle preview.
-- Press `Ctrl-T` to stop the embedded terminal process.
 - Press `Ctrl-U` to clear the query.
 - Press `Esc` to quit.
 
-The embedded terminal pane is PTY-backed and works well for line-oriented interaction. Full-screen nested TUIs may be limited by Textual’s lack of a native terminal-emulator widget.
+Tmux-pane resume requires running the TUI inside tmux. It creates a real tmux pane with the selected agent command, so Claude/Codex owns that pane interactively. If tmux is not installed or the TUI is not running inside tmux, use `Ctrl-O` for external resume.
 
 ## Resume
 
 ```sh
 uv run session-search resume codex 019eabd2-9955-77e0-8fd8-2927fbbd3cff
 uv run session-search resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698
+uv run session-search resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-pane
 ```
 
 Codex resumes with `codex resume -C <cwd> <session_id>`.
 Claude resumes with `claude --resume <session_id>` from the indexed session folder.
 If an indexed folder no longer exists, resume falls back to the current directory and prints a warning.
+Pass `--tmux-pane` to open the same prepared command in a tmux split pane instead of the current terminal.

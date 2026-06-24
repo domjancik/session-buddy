@@ -41,14 +41,13 @@ The TUI is implemented with Textual.
 - Results table shows provider, score, updated time, title, and folder.
 - Preview pane shows provider, session id, title, folder, branch, and snippets.
 - Index-status banner shows whether the local index is stale.
-- Embedded terminal pane can run a selected resume command in-process through a PTY.
+- Tmux-pane resume can run a selected resume command in a real tmux split pane.
 - Controls:
   - `Enter`: search
   - `Up/Down`: move through results
-  - `Ctrl-R`: resume selected session in the embedded terminal pane
+  - `Ctrl-R`: resume selected session in a tmux split pane
   - `Ctrl-O`: resume selected session externally in the normal terminal
   - `Ctrl-P`: toggle preview
-  - `Ctrl-T`: stop embedded terminal process
   - `Ctrl-U`: clear query
   - `Esc`: quit
 
@@ -137,10 +136,10 @@ If the indexed cwd no longer exists, resume falls back to the current directory 
 
 The TUI exposes two resume modes:
 
-- Embedded: starts the prepared resume command in a PTY-backed pane inside the TUI.
+- Tmux pane: starts the prepared resume command in a tmux split pane when `session-search tui` is running inside tmux.
 - External: exits the TUI and starts the prepared resume command in the normal terminal.
 
-The embedded mode is intended for line-oriented interaction. A full-screen nested TUI may not render perfectly until the app uses a dedicated terminal-emulator widget.
+Tmux-pane mode deliberately delegates terminal emulation, pane sizing, focus, and raw input handling to tmux. The Textual app does not include a dedicated agent input widget and does not try to render the agent session inside a log panel. If tmux is unavailable or the TUI is not running inside tmux, pane resume shows a clear message and the user can use external resume instead.
 
 ## Validation
 
@@ -153,7 +152,7 @@ Automated tests cover:
 - Stale cwd fallback behavior.
 - Real `claude --version` and `codex --version` execution through the resume wrapper.
 - Textual TUI bindings and mount smoke test.
-- PTY-backed embedded terminal output smoke test.
+- Tmux pane command construction and guardrail tests.
 
 Expected verification command:
 
@@ -169,7 +168,8 @@ uv run --extra test pytest -q
 - `session-search search "<query>"` returns relevant sessions with cwd and snippets.
 - `session-search tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
 - `session-search tui --auto-index` updates stale sources before opening the UI.
-- `Ctrl-R` in the TUI resumes the selected session in an embedded pane or warns clearly when the indexed cwd is stale.
+- `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is stale.
 - `Ctrl-O` in the TUI resumes externally through the normal terminal.
 - `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
+- `session-search resume <provider> <session_id> --tmux-pane` opens the prepared command in a tmux split pane when running inside tmux.
 - Tests pass locally.
