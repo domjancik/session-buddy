@@ -57,7 +57,10 @@ The terminal UI is built with Textual.
 ```sh
 uv run session-search tui
 uv run session-search tui --auto-index
+uv run session-search tui --no-tmux
 ```
+
+When `tmux` is available and the command is not already running inside tmux, `session-search tui` starts a temporary tmux session automatically. That makes `Ctrl-R` pane resume available without manually starting tmux first. Pass `--no-tmux` to run the Textual UI directly.
 
 The TUI shows an index-status banner on startup. Pass `--auto-index` to update changed sources and prune deleted index entries before opening the interface.
 
@@ -71,7 +74,7 @@ Keys:
 - Press `Ctrl-U` to clear the query.
 - Press `Esc` to quit.
 
-Tmux-pane resume requires running the TUI inside tmux. It creates a real tmux pane with the selected agent command, so Claude/Codex owns that pane interactively. If tmux is not installed or the TUI is not running inside tmux, use `Ctrl-O` for external resume.
+Tmux-pane resume creates a real tmux pane with the selected agent command, so Claude/Codex owns that pane interactively. If tmux is not installed or the TUI is launched with `--no-tmux`, use `Ctrl-O` for external resume.
 
 ## Resume
 

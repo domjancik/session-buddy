@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -8,7 +9,7 @@ from .indexer import check_index_freshness, index_all
 from .resume import load_resume_command, prepare_resume_command, run_resume
 from .search import format_result_line, search_sessions
 from .text import format_time
-from .tmux import build_tmux_pane_command, open_tmux_pane
+from .tmux import build_tmux_pane_command, open_tmux_pane, run_command_in_new_tmux_session_if_available
 from .tui import run_tui
 
 
@@ -18,10 +19,20 @@ DEFAULT_DB = Path(".session-search/index.sqlite")
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    args._session_search_argv = current_launch_argv(argv)
     if not hasattr(args, "func"):
         parser.print_help()
         return 2
     return int(args.func(args) or 0)
+
+
+def current_launch_argv(argv: list[str] | None = None) -> list[str]:
+    if argv is not None:
+        return [sys.executable, "-m", "session_search", *argv]
+    current = list(sys.argv)
+    if current and Path(current[0]).name == "__main__.py":
+        return [sys.executable, "-m", "session_search", *current[1:]]
+    return current
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     tui_parser.add_argument("--provider", choices=["claude", "codex"])
     tui_parser.add_argument("--cwd", help="Only show sessions whose cwd contains this text.")
     tui_parser.add_argument("--auto-index", action="store_true", help="Update stale index sources before opening the TUI.")
+    tui_parser.add_argument("--no-tmux", action="store_true", help="Do not auto-start the TUI inside tmux.")
     add_source_args(tui_parser)
     tui_parser.set_defaults(func=cmd_tui)
 
@@ -127,6 +139,11 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 
 def cmd_tui(args: argparse.Namespace) -> int:
+    if not args.no_tmux:
+        returncode = run_command_in_new_tmux_session_if_available(args._session_search_argv, cwd=os.getcwd())
+        if returncode is not None:
+            return returncode
+
     freshness_message = handle_freshness_for_process(args, auto_index=args.auto_index, semantic=True)
     run_tui(args.db, args.query, provider=args.provider, cwd_filter=args.cwd, index_status=freshness_message)
     return 0

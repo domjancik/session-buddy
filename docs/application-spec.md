@@ -41,6 +41,7 @@ The TUI is implemented with Textual.
 - Results table shows provider, score, updated time, title, and folder.
 - Preview pane shows provider, session id, title, folder, branch, and snippets.
 - Index-status banner shows whether the local index is stale.
+- `session-search tui` automatically starts a temporary tmux session when tmux is available, the command is outside tmux, and `--no-tmux` was not passed.
 - Tmux-pane resume can run a selected resume command in a real tmux split pane.
 - Controls:
   - `Enter`: search
@@ -139,7 +140,7 @@ The TUI exposes two resume modes:
 - Tmux pane: starts the prepared resume command in a tmux split pane when `session-search tui` is running inside tmux.
 - External: exits the TUI and starts the prepared resume command in the normal terminal.
 
-Tmux-pane mode deliberately delegates terminal emulation, pane sizing, focus, and raw input handling to tmux. The Textual app does not include a dedicated agent input widget and does not try to render the agent session inside a log panel. If tmux is unavailable or the TUI is not running inside tmux, pane resume shows a clear message and the user can use external resume instead.
+When `session-search tui` starts outside tmux and tmux is on `PATH`, the CLI wraps the TUI command in `tmux new-session` with a recursion guard environment variable. `--no-tmux` disables this bootstrap. Tmux-pane mode deliberately delegates terminal emulation, pane sizing, focus, and raw input handling to tmux. The Textual app does not include a dedicated agent input widget and does not try to render the agent session inside a log panel. If tmux is unavailable or the TUI is not running inside tmux, pane resume shows a clear message and the user can use external resume instead.
 
 ## Validation
 
@@ -152,6 +153,7 @@ Automated tests cover:
 - Stale cwd fallback behavior.
 - Real `claude --version` and `codex --version` execution through the resume wrapper.
 - Textual TUI bindings and mount smoke test.
+- TUI tmux bootstrap command construction and skip conditions.
 - Tmux pane command construction and guardrail tests.
 
 Expected verification command:
@@ -167,6 +169,8 @@ uv run --extra test pytest -q
 - `session-search search "<query>" --auto-index` updates stale sources before returning results.
 - `session-search search "<query>"` returns relevant sessions with cwd and snippets.
 - `session-search tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
+- `session-search tui` automatically starts inside tmux when tmux is available and the command is not already inside tmux.
+- `session-search tui --no-tmux` runs the Textual UI directly without tmux bootstrap.
 - `session-search tui --auto-index` updates stale sources before opening the UI.
 - `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is stale.
 - `Ctrl-O` in the TUI resumes externally through the normal terminal.
