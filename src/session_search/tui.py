@@ -4,18 +4,21 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
-from textual.widgets import DataTable, Footer, Header, Input, Static
+from textual.containers import Horizontal, Vertical
+from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
 
 from .models import SearchResult
 from .resume import ResumeCommand, build_resume_command, prepare_resume_command, run_prepared_resume
 from .search import search_sessions
+from .terminal import EmbeddedTerminalProcess
 from .text import format_time, truncate
 
 
 CONTROL_BINDINGS = (
     Binding("ctrl+p", "toggle_preview", "Preview"),
-    Binding("ctrl+r", "resume", "Resume"),
+    Binding("ctrl+r", "resume_embedded", "Resume Pane"),
+    Binding("ctrl+o", "resume_external", "Resume External"),
+    Binding("ctrl+t", "stop_terminal", "Stop Pane"),
     Binding("ctrl+u", "clear_query", "Clear"),
     Binding("escape", "quit", "Quit"),
 )
@@ -72,11 +75,26 @@ class SessionSearchApp(App[ResumeCommand | None]):
     }
 
     #preview {
-        width: 2fr;
         height: 1fr;
         padding: 0 1;
         border-left: solid $primary;
         overflow-y: auto;
+    }
+
+    #side {
+        width: 2fr;
+        height: 1fr;
+    }
+
+    #terminal-log {
+        height: 1fr;
+        padding: 0 1;
+        border-left: solid $accent;
+    }
+
+    #terminal-input {
+        height: 3;
+        margin: 0 1;
     }
     """
 
@@ -99,15 +117,22 @@ class SessionSearchApp(App[ResumeCommand | None]):
         self.results: list[SearchResult] = []
         self.selected_index = 0
         self.preview_visible = True
+        self.terminal_process: EmbeddedTerminalProcess | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield Input(value=self.initial_query, placeholder="Search sessions, then press Enter", id="query")
         yield Static(self.index_status, id="index-status")
-        yield Static("Enter search | Up/Down move | Ctrl-P preview | Ctrl-R resume | Ctrl-U clear | Esc quit", id="status")
+        yield Static(
+            "Enter search | Up/Down move | Ctrl-R pane | Ctrl-O external | Ctrl-P preview | Ctrl-T stop | Ctrl-U clear | Esc quit",
+            id="status",
+        )
         with Horizontal(id="body"):
             yield DataTable(id="results")
-            yield Static("", id="preview")
+            with Vertical(id="side"):
+                yield Static("", id="preview")
+                yield RichLog(id="terminal-log", wrap=True, markup=False, highlight=False, auto_scroll=True)
+                yield Input(placeholder="Send input to embedded session, then press Enter", id="terminal-input")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -115,9 +140,15 @@ class SessionSearchApp(App[ResumeCommand | None]):
         table.cursor_type = "row"
         table.zebra_stripes = True
         table.add_columns("#", "Provider", "Score", "Updated", "Title", "Folder")
+        self.terminal_log.display = False
+        self.terminal_input.display = False
         if self.initial_query:
             self.run_search(self.initial_query)
         self.query_one("#query", Input).focus()
+
+    def on_unmount(self) -> None:
+        if self.terminal_process is not None:
+            self.terminal_process.terminate()
 
     @property
     def results_table(self) -> DataTable:
@@ -128,13 +159,24 @@ class SessionSearchApp(App[ResumeCommand | None]):
         return self.query_one("#preview", Static)
 
     @property
+    def terminal_log(self) -> RichLog:
+        return self.query_one("#terminal-log", RichLog)
+
+    @property
+    def terminal_input(self) -> Input:
+        return self.query_one("#terminal-input", Input)
+
+    @property
     def status_panel(self) -> Static:
         return self.query_one("#status", Static)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "query":
+        if event.input.id == "query":
+            self.run_search(event.value)
             return
-        self.run_search(event.value)
+        if event.input.id == "terminal-input":
+            self.send_terminal_input(event.value)
+            event.input.value = ""
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         self.selected_index = max(0, min(event.cursor_row, len(self.results) - 1))
@@ -150,7 +192,9 @@ class SessionSearchApp(App[ResumeCommand | None]):
             self.results = []
             self.selected_index = 0
             self.populate_results()
-            self.status_panel.update("Enter search | Up/Down move | Ctrl-P preview | Ctrl-R resume | Ctrl-U clear | Esc quit")
+            self.status_panel.update(
+                "Enter search | Up/Down move | Ctrl-R pane | Ctrl-O external | Ctrl-P preview | Ctrl-T stop | Ctrl-U clear | Esc quit"
+            )
             return
         self.status_panel.update("Searching...")
         self.results = search_sessions(
@@ -214,9 +258,71 @@ class SessionSearchApp(App[ResumeCommand | None]):
         self.selected_index = 0
         self.populate_results()
 
-    def action_resume(self) -> None:
-        if not self.results:
+    def action_resume_external(self) -> None:
+        command = self.selected_resume_command()
+        if command is None:
             self.status_panel.update("No selected session to resume.")
             return
+        self.exit(command)
+
+    def action_resume_embedded(self) -> None:
+        command = self.selected_resume_command()
+        if command is None:
+            self.status_panel.update("No selected session to resume.")
+            return
+        if self.terminal_process is not None and self.terminal_process.running:
+            self.status_panel.update("Embedded session is already running. Press Ctrl-T to stop it first.")
+            return
+        try:
+            prepared = prepare_resume_command(command)
+        except RuntimeError as error:
+            self.status_panel.update(str(error))
+            return
+
+        log = self.terminal_log
+        log.display = True
+        self.terminal_input.display = True
+        log.clear()
+        for warning in prepared.warnings:
+            log.write(warning)
+        log.write(prepared.shell_line())
+
+        self.terminal_process = EmbeddedTerminalProcess(
+            prepared,
+            on_output=lambda text: self.call_from_thread(self.append_terminal_output, text),
+            on_exit=lambda code: self.call_from_thread(self.finish_terminal_process, code),
+        )
+        try:
+            self.terminal_process.start()
+        except OSError as error:
+            self.terminal_process = None
+            self.status_panel.update(f"Could not start embedded session: {error}")
+            return
+
+        self.status_panel.update("Embedded session running. Type below to send input, Ctrl-T stops it.")
+        self.terminal_input.focus()
+
+    def action_stop_terminal(self) -> None:
+        if self.terminal_process is None or not self.terminal_process.running:
+            self.status_panel.update("No embedded session is running.")
+            return
+        self.terminal_process.terminate()
+        self.status_panel.update("Stopping embedded session...")
+
+    def selected_resume_command(self) -> ResumeCommand | None:
+        if not self.results:
+            return None
         result = self.results[self.selected_index]
-        self.exit(build_resume_command(result.provider, result.session_id, result.cwd))
+        return build_resume_command(result.provider, result.session_id, result.cwd)
+
+    def send_terminal_input(self, text: str) -> None:
+        if self.terminal_process is None or not self.terminal_process.running:
+            self.status_panel.update("No embedded session is running.")
+            return
+        self.terminal_process.send_line(text)
+
+    def append_terminal_output(self, text: str) -> None:
+        self.terminal_log.write(text)
+
+    def finish_terminal_process(self, code: int | None) -> None:
+        self.status_panel.update(f"Embedded session exited with code {code}.")

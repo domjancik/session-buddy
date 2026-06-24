@@ -41,11 +41,14 @@ The TUI is implemented with Textual.
 - Results table shows provider, score, updated time, title, and folder.
 - Preview pane shows provider, session id, title, folder, branch, and snippets.
 - Index-status banner shows whether the local index is stale.
+- Embedded terminal pane can run a selected resume command in-process through a PTY.
 - Controls:
   - `Enter`: search
   - `Up/Down`: move through results
+  - `Ctrl-R`: resume selected session in the embedded terminal pane
+  - `Ctrl-O`: resume selected session externally in the normal terminal
   - `Ctrl-P`: toggle preview
-  - `Ctrl-R`: resume selected session
+  - `Ctrl-T`: stop embedded terminal process
   - `Ctrl-U`: clear query
   - `Esc`: quit
 
@@ -132,6 +135,13 @@ Execution resolves actual CLI paths before running:
 
 If the indexed cwd no longer exists, resume falls back to the current directory and prints a warning. For Codex, the `-C` argument is rewritten to the fallback directory. For Claude, the process runs from the fallback directory while preserving the original session id.
 
+The TUI exposes two resume modes:
+
+- Embedded: starts the prepared resume command in a PTY-backed pane inside the TUI.
+- External: exits the TUI and starts the prepared resume command in the normal terminal.
+
+The embedded mode is intended for line-oriented interaction. A full-screen nested TUI may not render perfectly until the app uses a dedicated terminal-emulator widget.
+
 ## Validation
 
 Automated tests cover:
@@ -143,6 +153,7 @@ Automated tests cover:
 - Stale cwd fallback behavior.
 - Real `claude --version` and `codex --version` execution through the resume wrapper.
 - Textual TUI bindings and mount smoke test.
+- PTY-backed embedded terminal output smoke test.
 
 Expected verification command:
 
@@ -158,6 +169,7 @@ uv run --extra test pytest -q
 - `session-search search "<query>"` returns relevant sessions with cwd and snippets.
 - `session-search tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
 - `session-search tui --auto-index` updates stale sources before opening the UI.
-- `Ctrl-R` in the TUI resumes the selected session or warns clearly when the indexed cwd is stale.
+- `Ctrl-R` in the TUI resumes the selected session in an embedded pane or warns clearly when the indexed cwd is stale.
+- `Ctrl-O` in the TUI resumes externally through the normal terminal.
 - `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
 - Tests pass locally.

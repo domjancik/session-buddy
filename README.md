@@ -65,10 +65,14 @@ Keys:
 
 - Type a query and press `Enter` to search.
 - Use arrow keys to move through results.
+- Press `Ctrl-R` to resume the selected session in the embedded terminal pane.
+- Press `Ctrl-O` to resume the selected session externally in the normal terminal.
 - Press `Ctrl-P` to toggle preview.
-- Press `Ctrl-R` to resume the selected session.
+- Press `Ctrl-T` to stop the embedded terminal process.
 - Press `Ctrl-U` to clear the query.
 - Press `Esc` to quit.
+
+The embedded terminal pane is PTY-backed and works well for line-oriented interaction. Full-screen nested TUIs may be limited by Textual’s lack of a native terminal-emulator widget.
 
 ## Resume
 
