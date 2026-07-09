@@ -237,6 +237,10 @@ class SessionSearchApp(App[ResumeCommand | None]):
         except RuntimeError as error:
             self.status_panel.update(str(error))
             return
+        if prepared.provider == "claude" and prepared.indexed_cwd_missing:
+            restore = prepared.restore_worktree_command or "restore the original cwd before resuming"
+            self.status_panel.update(f"Claude cwd missing. Restore: {restore}")
+            return
 
         try:
             open_tmux_pane(prepared)
@@ -251,4 +255,4 @@ class SessionSearchApp(App[ResumeCommand | None]):
         if not self.results:
             return None
         result = self.results[self.selected_index]
-        return build_resume_command(result.provider, result.session_id, result.cwd)
+        return build_resume_command(result.provider, result.session_id, result.cwd, result.git_branch)

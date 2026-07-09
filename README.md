@@ -86,5 +86,12 @@ uv run session-search resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-
 
 Codex resumes with `codex resume -C <cwd> <session_id>`.
 Claude resumes with `claude --resume <session_id>` from the indexed session folder.
-If an indexed folder no longer exists, resume falls back to the current directory and prints a warning.
+If an indexed Codex folder no longer exists, resume falls back to the current directory and prints a warning.
+If an indexed Claude folder no longer exists, resume prints a restore command when the missing path is under a repo `.worktrees` folder, for example:
+
+```sh
+git -C /Users/example/dev/acme-mono worktree add /Users/example/dev/acme-mono/.worktrees/84-teal 84-teal
+```
+
+Claude resume is project-directory scoped, so restore the original folder before running `claude --resume`.
 Pass `--tmux-pane` to open the same prepared command in a tmux split pane instead of the current terminal.

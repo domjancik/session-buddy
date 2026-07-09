@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from session_search.embeddings import Embedder
 from session_search.models import MessageRecord, SessionRecord
 from session_search.resume import (
     PreparedResumeCommand,
+    build_restore_worktree_command,
     build_resume_command,
     prepare_resume_command,
     resolve_agent_executable,
@@ -64,16 +66,74 @@ def test_resume_commands() -> None:
 
 
 def test_prepare_resume_falls_back_when_indexed_cwd_is_missing(tmp_path: Path) -> None:
-    missing = tmp_path / "missing"
+    repo = tmp_path / "repo"
+    worktrees = repo / ".worktrees"
+    worktrees.mkdir(parents=True)
+    missing = worktrees / "feature with spaces"
     fallback = tmp_path / "fallback"
     fallback.mkdir()
-    command = build_resume_command("codex", "abc", str(missing))
+    command = build_resume_command("codex", "abc", str(missing), "feature/branch")
 
     prepared = prepare_resume_command(command, fallback_cwd=str(fallback), resolve_executable=False)
 
     assert prepared.cwd == str(fallback)
     assert prepared.argv == ["codex", "resume", "-C", str(fallback), "abc"]
-    assert "Indexed cwd no longer exists" in prepared.warnings[0]
+    assert prepared.indexed_cwd_missing is True
+    assert prepared.restore_worktree_command is not None
+    assert shlex.split(prepared.restore_worktree_command) == [
+        "git",
+        "-C",
+        str(repo),
+        "worktree",
+        "add",
+        str(missing),
+        "feature/branch",
+    ]
+    assert "Restore worktree with:" in prepared.warnings[0]
+    assert prepared.warnings[-1] == f"Resuming from fallback cwd: {fallback}"
+
+
+def test_prepare_resume_keeps_missing_claude_cwd_and_offers_restore(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    worktrees = repo / ".worktrees"
+    worktrees.mkdir(parents=True)
+    missing = worktrees / "84-teal"
+    command = build_resume_command("claude", "def", str(missing), "84-teal")
+
+    prepared = prepare_resume_command(command, resolve_executable=False)
+
+    assert prepared.cwd == str(missing)
+    assert prepared.argv == ["claude", "--resume", "def"]
+    assert prepared.indexed_cwd_missing is True
+    assert prepared.restore_worktree_command is not None
+    assert shlex.split(prepared.restore_worktree_command) == [
+        "git",
+        "-C",
+        str(repo),
+        "worktree",
+        "add",
+        str(missing),
+        "84-teal",
+    ]
+    assert "Claude resume is project-directory scoped" in prepared.warnings[-1]
+
+
+def test_build_restore_worktree_command_uses_worktree_name_when_branch_unknown(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    worktrees = repo / ".worktrees"
+    worktrees.mkdir(parents=True)
+    missing = worktrees / "84-teal"
+
+    command = build_restore_worktree_command(str(missing))
+
+    assert command is not None
+    assert shlex.split(command)[-1] == "84-teal"
+
+
+def test_build_restore_worktree_command_ignores_non_worktree_paths(tmp_path: Path) -> None:
+    missing = tmp_path / "repo" / "nested"
+
+    assert build_restore_worktree_command(str(missing), "branch") is None
 
 
 @pytest.mark.parametrize("provider,version_arg", [("claude", "--version"), ("codex", "--version")])

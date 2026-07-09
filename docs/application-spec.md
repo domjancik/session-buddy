@@ -21,7 +21,7 @@ The system is private by default: indexing and search run locally, and no sessio
 - Cloud embeddings or remote LLM calls.
 - Browser UI.
 - Editing or mutating Claude/Codex session history.
-- Recreating deleted worktrees before resume.
+- Automatically recreating deleted worktrees before resume.
 
 ## Interfaces
 
@@ -133,7 +133,11 @@ Execution resolves actual CLI paths before running:
 - `codex`
 - common fallback install paths such as `~/.local/bin` and `/opt/homebrew/bin`
 
-If the indexed cwd no longer exists, resume falls back to the current directory and prints a warning. For Codex, the `-C` argument is rewritten to the fallback directory. For Claude, the process runs from the fallback directory while preserving the original session id.
+If the indexed cwd no longer exists:
+
+- Codex falls back to the current directory and rewrites the `-C` argument.
+- Claude does not fall back, because `claude --resume` is project-directory scoped and running from a different cwd can report an indexed session as not found.
+- When the missing cwd is under `<repo>/.worktrees/<name>`, resume preparation offers a restore command: `git -C <repo> worktree add <cwd> <branch>`.
 
 The TUI exposes two resume modes:
 
@@ -150,7 +154,7 @@ Automated tests cover:
 - Codex JSONL and `session_index.jsonl` parsing.
 - Indexing and search over fixture sessions.
 - Resume command construction.
-- Stale cwd fallback behavior.
+- Stale cwd fallback and restore-command behavior.
 - Real `claude --version` and `codex --version` execution through the resume wrapper.
 - Textual TUI bindings and mount smoke test.
 - TUI tmux bootstrap command construction and skip conditions.
@@ -172,7 +176,8 @@ uv run --extra test pytest -q
 - `session-search tui` automatically starts inside tmux when tmux is available and the command is not already inside tmux.
 - `session-search tui --no-tmux` runs the Textual UI directly without tmux bootstrap.
 - `session-search tui --auto-index` updates stale sources before opening the UI.
-- `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is stale.
+- `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is missing.
+- Missing Claude worktree cwd warnings include a concrete `git worktree add` restore command when it can be inferred.
 - `Ctrl-O` in the TUI resumes externally through the normal terminal.
 - `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
 - `session-search resume <provider> <session_id> --tmux-pane` opens the prepared command in a tmux split pane when running inside tmux.

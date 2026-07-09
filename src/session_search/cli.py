@@ -214,6 +214,9 @@ def cmd_resume(args: argparse.Namespace) -> int:
             else:
                 print(prepared.shell_line())
             return 0
+        if prepared.provider == "claude" and prepared.indexed_cwd_missing:
+            print("Cannot resume Claude session until the original cwd is restored.", file=sys.stderr)
+            return 1
         try:
             open_tmux_pane(prepared, split=args.tmux_split)
         except RuntimeError as error:

@@ -17,6 +17,7 @@ class ResumeCommand:
     session_id: str
     cwd: str
     argv: list[str]
+    git_branch: str = ""
 
     def shell_line(self) -> str:
         prefix = f"cd {shlex.quote(self.cwd)} && " if self.cwd else ""
@@ -30,13 +31,15 @@ class PreparedResumeCommand:
     cwd: str
     argv: list[str]
     warnings: list[str]
+    indexed_cwd_missing: bool = False
+    restore_worktree_command: str | None = None
 
     def shell_line(self) -> str:
         prefix = f"cd {shlex.quote(self.cwd)} && " if self.cwd else ""
         return prefix + " ".join(shlex.quote(part) for part in self.argv)
 
 
-def build_resume_command(provider: str, session_id: str, cwd: str) -> ResumeCommand:
+def build_resume_command(provider: str, session_id: str, cwd: str, git_branch: str = "") -> ResumeCommand:
     if provider == "codex":
         argv = ["codex", "resume"]
         if cwd:
@@ -46,7 +49,7 @@ def build_resume_command(provider: str, session_id: str, cwd: str) -> ResumeComm
         argv = ["claude", "--resume", session_id]
     else:
         raise ValueError(f"Unsupported provider: {provider}")
-    return ResumeCommand(provider, session_id, cwd, argv)
+    return ResumeCommand(provider, session_id, cwd, argv, git_branch)
 
 
 def load_resume_command(db_path: Path, provider: str, session_id: str, cwd_override: str | None = None) -> ResumeCommand:
@@ -56,7 +59,7 @@ def load_resume_command(db_path: Path, provider: str, session_id: str, cwd_overr
         if row is None:
             raise KeyError(f"No indexed {provider} session with id {session_id}")
         cwd = cwd_override if cwd_override is not None else str(row["cwd"] or "")
-        return build_resume_command(provider, session_id, cwd)
+        return build_resume_command(provider, session_id, cwd, str(row["git_branch"] or ""))
     finally:
         db.close()
 
@@ -88,13 +91,24 @@ def prepare_resume_command(
     warnings: list[str] = []
     argv = list(command.argv)
     cwd = command.cwd
+    indexed_cwd_missing = False
+    restore_command: str | None = None
 
     if cwd and not Path(cwd).is_dir():
-        fallback = fallback_cwd or os.getcwd()
-        warnings.append(f"Indexed cwd no longer exists: {cwd}. Resuming from: {fallback}")
-        cwd = fallback
-        if command.provider == "codex":
-            argv = replace_codex_cwd_arg(argv, fallback)
+        indexed_cwd_missing = True
+        restore_command = build_restore_worktree_command(cwd, command.git_branch)
+        if restore_command:
+            warnings.append(f"Indexed cwd no longer exists: {cwd}. Restore worktree with: {restore_command}")
+        else:
+            warnings.append(f"Indexed cwd no longer exists: {cwd}")
+        if command.provider == "claude":
+            warnings.append("Claude resume is project-directory scoped; restore the original cwd before resuming.")
+        else:
+            fallback = fallback_cwd or os.getcwd()
+            warnings.append(f"Resuming from fallback cwd: {fallback}")
+            cwd = fallback
+            if command.provider == "codex":
+                argv = replace_codex_cwd_arg(argv, fallback)
 
     if resolve_executable:
         executable = resolve_agent_executable(argv[0])
@@ -108,6 +122,31 @@ def prepare_resume_command(
         cwd=cwd,
         argv=argv,
         warnings=warnings,
+        indexed_cwd_missing=indexed_cwd_missing,
+        restore_worktree_command=restore_command,
+    )
+
+
+def build_restore_worktree_command(cwd: str, git_branch: str = "") -> str | None:
+    path = Path(cwd)
+    if path.parent.name != ".worktrees":
+        return None
+    repo = path.parent.parent
+    if not repo.is_dir():
+        return None
+    branch = git_branch or path.name
+    if not branch:
+        return None
+    return " ".join(
+        [
+            "git",
+            "-C",
+            shlex.quote(str(repo)),
+            "worktree",
+            "add",
+            shlex.quote(str(path)),
+            shlex.quote(branch),
+        ]
     )
 
 
@@ -129,6 +168,8 @@ def run_resume(command: ResumeCommand, replace_process: bool = False) -> int:
     prepared = prepare_resume_command(command)
     for warning in prepared.warnings:
         print(warning, file=sys.stderr)
+    if prepared.provider == "claude" and prepared.indexed_cwd_missing:
+        raise RuntimeError("Cannot resume Claude session until the original cwd is restored.")
     return run_prepared_resume(prepared, replace_process=replace_process)
 
 
