@@ -8,7 +8,13 @@ from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
 from .models import SearchResult
-from .resume import ResumeCommand, build_resume_command, prepare_resume_command, run_prepared_resume
+from .resume import (
+    ResumeCommand,
+    build_resume_command,
+    prepare_resume_command,
+    run_prepared_resume,
+    run_restore_worktree,
+)
 from .search import search_sessions
 from .text import format_time, truncate
 from .tmux import open_tmux_pane
@@ -16,13 +22,14 @@ from .tmux import open_tmux_pane
 
 STATUS_HELP = (
     "Enter search | Up/Down move | Ctrl-R tmux pane | Ctrl-O external | "
-    "Ctrl-P preview | Ctrl-U clear | Esc quit"
+    "Ctrl-W restore | Ctrl-P preview | Ctrl-U clear | Esc quit"
 )
 
 CONTROL_BINDINGS = (
     Binding("ctrl+p", "toggle_preview", "Preview"),
     Binding("ctrl+r", "resume_pane", "Tmux Pane"),
     Binding("ctrl+o", "resume_external", "External"),
+    Binding("ctrl+w", "restore_worktree", "Restore"),
     Binding("ctrl+u", "clear_query", "Clear"),
     Binding("escape", "quit", "Quit"),
 )
@@ -41,6 +48,9 @@ def run_tui(
         prepared = prepare_resume_command(command)
         for warning in prepared.warnings:
             print(warning)
+        if prepared.provider == "claude" and prepared.indexed_cwd_missing:
+            print("Cannot resume Claude session until the original cwd is restored.")
+            return
         print(prepared.shell_line())
         run_prepared_resume(prepared)
 
@@ -250,6 +260,30 @@ class SessionSearchApp(App[ResumeCommand | None]):
 
         warning = f" {prepared.warnings[-1]}" if prepared.warnings else ""
         self.status_panel.update(f"Opened tmux pane for {prepared.provider} session.{warning}")
+
+    def action_restore_worktree(self) -> None:
+        command = self.selected_resume_command()
+        if command is None:
+            self.status_panel.update("No selected session to restore.")
+            return
+        try:
+            prepared = prepare_resume_command(command, resolve_executable=False)
+        except RuntimeError as error:
+            self.status_panel.update(str(error))
+            return
+        if not prepared.indexed_cwd_missing:
+            self.status_panel.update("Selected session cwd already exists.")
+            return
+        if not prepared.restore_worktree_argv:
+            self.status_panel.update("No restore command available for this cwd.")
+            return
+        self.status_panel.update(f"Restoring worktree: {prepared.restore_worktree_command}")
+        try:
+            run_restore_worktree(prepared)
+        except RuntimeError as error:
+            self.status_panel.update(str(error))
+            return
+        self.status_panel.update("Worktree restored. Press Ctrl-R to resume in a tmux pane or Ctrl-O external.")
 
     def selected_resume_command(self) -> ResumeCommand | None:
         if not self.results:

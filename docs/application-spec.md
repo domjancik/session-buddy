@@ -48,6 +48,7 @@ The TUI is implemented with Textual.
   - `Up/Down`: move through results
   - `Ctrl-R`: resume selected session in a tmux split pane
   - `Ctrl-O`: resume selected session externally in the normal terminal
+  - `Ctrl-W`: run the inferred `git worktree add` restore command for the selected session when its cwd is missing
   - `Ctrl-P`: toggle preview
   - `Ctrl-U`: clear query
   - `Esc`: quit
@@ -138,6 +139,7 @@ If the indexed cwd no longer exists:
 - Codex falls back to the current directory and rewrites the `-C` argument.
 - Claude does not fall back, because `claude --resume` is project-directory scoped and running from a different cwd can report an indexed session as not found.
 - When the missing cwd is under `<repo>/.worktrees/<name>`, resume preparation offers a restore command: `git -C <repo> worktree add <cwd> <branch>`.
+- In the TUI, `Ctrl-W` runs that restore command for the selected session and verifies the cwd exists before reporting success.
 
 The TUI exposes two resume modes:
 
@@ -155,6 +157,7 @@ Automated tests cover:
 - Indexing and search over fixture sessions.
 - Resume command construction.
 - Stale cwd fallback and restore-command behavior.
+- TUI restore-worktree binding and restore runner behavior.
 - Real `claude --version` and `codex --version` execution through the resume wrapper.
 - Textual TUI bindings and mount smoke test.
 - TUI tmux bootstrap command construction and skip conditions.
@@ -178,6 +181,7 @@ uv run --extra test pytest -q
 - `session-search tui --auto-index` updates stale sources before opening the UI.
 - `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is missing.
 - Missing Claude worktree cwd warnings include a concrete `git worktree add` restore command when it can be inferred.
+- `Ctrl-W` in the TUI executes the inferred restore command for the selected session's missing worktree.
 - `Ctrl-O` in the TUI resumes externally through the normal terminal.
 - `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
 - `session-search resume <provider> <session_id> --tmux-pane` opens the prepared command in a tmux split pane when running inside tmux.

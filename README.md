@@ -70,6 +70,7 @@ Keys:
 - Use arrow keys to move through results.
 - Press `Ctrl-R` to resume the selected session in a tmux split pane.
 - Press `Ctrl-O` to resume the selected session externally in the normal terminal.
+- Press `Ctrl-W` to restore the selected session's missing worktree when a restore command can be inferred.
 - Press `Ctrl-P` to toggle preview.
 - Press `Ctrl-U` to clear the query.
 - Press `Esc` to quit.

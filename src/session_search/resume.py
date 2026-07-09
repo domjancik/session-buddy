@@ -33,6 +33,7 @@ class PreparedResumeCommand:
     warnings: list[str]
     indexed_cwd_missing: bool = False
     restore_worktree_command: str | None = None
+    restore_worktree_argv: list[str] | None = None
 
     def shell_line(self) -> str:
         prefix = f"cd {shlex.quote(self.cwd)} && " if self.cwd else ""
@@ -93,10 +94,12 @@ def prepare_resume_command(
     cwd = command.cwd
     indexed_cwd_missing = False
     restore_command: str | None = None
+    restore_argv: list[str] | None = None
 
     if cwd and not Path(cwd).is_dir():
         indexed_cwd_missing = True
-        restore_command = build_restore_worktree_command(cwd, command.git_branch)
+        restore_argv = build_restore_worktree_argv(cwd, command.git_branch)
+        restore_command = shell_join(restore_argv) if restore_argv else None
         if restore_command:
             warnings.append(f"Indexed cwd no longer exists: {cwd}. Restore worktree with: {restore_command}")
         else:
@@ -124,10 +127,11 @@ def prepare_resume_command(
         warnings=warnings,
         indexed_cwd_missing=indexed_cwd_missing,
         restore_worktree_command=restore_command,
+        restore_worktree_argv=restore_argv,
     )
 
 
-def build_restore_worktree_command(cwd: str, git_branch: str = "") -> str | None:
+def build_restore_worktree_argv(cwd: str, git_branch: str = "") -> list[str] | None:
     path = Path(cwd)
     if path.parent.name != ".worktrees":
         return None
@@ -137,17 +141,35 @@ def build_restore_worktree_command(cwd: str, git_branch: str = "") -> str | None
     branch = git_branch or path.name
     if not branch:
         return None
-    return " ".join(
-        [
-            "git",
-            "-C",
-            shlex.quote(str(repo)),
-            "worktree",
-            "add",
-            shlex.quote(str(path)),
-            shlex.quote(branch),
-        ]
+    return ["git", "-C", str(repo), "worktree", "add", str(path), branch]
+
+
+def build_restore_worktree_command(cwd: str, git_branch: str = "") -> str | None:
+    argv = build_restore_worktree_argv(cwd, git_branch)
+    return shell_join(argv) if argv else None
+
+
+def shell_join(argv: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in argv)
+
+
+def run_restore_worktree(command: PreparedResumeCommand) -> str:
+    if not command.restore_worktree_argv:
+        raise RuntimeError("No restore worktree command is available for this session.")
+    completed = subprocess.run(
+        command.restore_worktree_argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
     )
+    output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
+    if completed.returncode != 0:
+        detail = output or f"git worktree add exited with code {completed.returncode}"
+        raise RuntimeError(f"Could not restore worktree: {detail}")
+    if command.cwd and not Path(command.cwd).is_dir():
+        raise RuntimeError(f"Restore command completed but cwd still does not exist: {command.cwd}")
+    return output
 
 
 def replace_codex_cwd_arg(argv: list[str], cwd: str) -> list[str]:
