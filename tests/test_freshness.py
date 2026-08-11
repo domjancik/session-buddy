@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-from session_search.indexer import check_index_freshness, index_all
+from session_buddy.indexer import check_index_freshness, index_all
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

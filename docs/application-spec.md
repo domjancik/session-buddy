@@ -27,11 +27,11 @@ The system is private by default: indexing and search run locally, and no sessio
 
 ### CLI
 
-- `session-search index`: scan local session stores and build/update `.session-search/index.sqlite`.
-- `session-search status`: report new, changed, deleted, and unchanged source files.
-- `session-search search <query>`: print ranked results with provider, score, updated time, title, cwd, id, branch, and snippets.
-- `session-search tui [query]`: open the Textual terminal UI.
-- `session-search resume <provider> <session_id>`: resume an indexed session.
+- `sb index`: scan local session stores and build/update `~/.session-buddy/index.sqlite`.
+- `sb status`: report new, changed, deleted, and unchanged source files.
+- `sb search <query>`: print ranked results with provider, score, updated time, title, cwd, id, branch, and snippets.
+- `sb tui [query]`: open the Textual terminal UI.
+- `sb resume [provider] <session_id>`: resume an indexed session.
 
 ### TUI
 
@@ -41,7 +41,7 @@ The TUI is implemented with Textual.
 - Results table shows provider, score, updated time, title, and folder.
 - Preview pane shows provider, session id, title, folder, branch, and snippets.
 - Index-status banner shows whether the local index is stale.
-- `session-search tui` automatically starts a temporary tmux session when tmux is available, the command is outside tmux, and `--no-tmux` was not passed.
+- `sb tui` automatically starts a temporary tmux session when tmux is available, the command is outside tmux, and `--no-tmux` was not passed.
 - Tmux-pane resume can run a selected resume command in a real tmux split pane.
 - Controls:
   - `Enter`: search
@@ -86,7 +86,7 @@ The TUI is implemented with Textual.
 
 ## Index Schema
 
-The local index lives at `.session-search/index.sqlite`.
+The local index lives at `~/.session-buddy/index.sqlite`.
 
 - `sessions`: normalized provider/session metadata and preview text.
 - `messages`: parsed transcript messages.
@@ -98,7 +98,7 @@ The local index lives at `.session-search/index.sqlite`.
 
 ## Freshness Behavior
 
-`session-search status`, `search`, and `tui` compare the current local session stores to the saved `source_state`.
+`sb status`, `search`, and `tui` compare the current local session stores to the saved `source_state`.
 
 Freshness checks detect:
 
@@ -143,10 +143,10 @@ If the indexed cwd no longer exists:
 
 The TUI exposes two resume modes:
 
-- Tmux pane: starts the prepared resume command in a tmux split pane when `session-search tui` is running inside tmux.
+- Tmux pane: starts the prepared resume command in a tmux split pane when `sb tui` is running inside tmux.
 - External: exits the TUI and starts the prepared resume command in the normal terminal.
 
-When `session-search tui` starts outside tmux and tmux is on `PATH`, the CLI wraps the TUI command in `tmux new-session` with a recursion guard environment variable. `--no-tmux` disables this bootstrap. Tmux-pane mode deliberately delegates terminal emulation, pane sizing, focus, and raw input handling to tmux. The Textual app does not include a dedicated agent input widget and does not try to render the agent session inside a log panel. If tmux is unavailable or the TUI is not running inside tmux, pane resume shows a clear message and the user can use external resume instead.
+When `sb tui` starts outside tmux and tmux is on `PATH`, the CLI wraps the TUI command in `tmux new-session` with a recursion guard environment variable. `--no-tmux` disables this bootstrap. Tmux-pane mode deliberately delegates terminal emulation, pane sizing, focus, and raw input handling to tmux. The Textual app does not include a dedicated agent input widget and does not try to render the agent session inside a log panel. If tmux is unavailable or the TUI is not running inside tmux, pane resume shows a clear message and the user can use external resume instead.
 
 ## Validation
 
@@ -171,18 +171,18 @@ uv run --extra test pytest -q
 
 ## Acceptance Criteria
 
-- `session-search index --semantic-backend hash` indexes local Claude/Codex sessions without parser failures.
-- `session-search status` reports stale index state, including metadata-only changes.
-- `session-search search "<query>" --auto-index` updates stale sources before returning results.
-- `session-search search "<query>"` returns relevant sessions with cwd and snippets.
-- `session-search tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
-- `session-search tui` automatically starts inside tmux when tmux is available and the command is not already inside tmux.
-- `session-search tui --no-tmux` runs the Textual UI directly without tmux bootstrap.
-- `session-search tui --auto-index` updates stale sources before opening the UI.
+- `sb index --semantic-backend hash` indexes local Claude/Codex sessions without parser failures.
+- `sb status` reports stale index state, including metadata-only changes.
+- `sb search "<query>" --auto-index` updates stale sources before returning results.
+- `sb search "<query>"` returns relevant sessions with cwd and snippets.
+- `sb tui` opens a Textual UI, allows normal query typing, and shows an index-status banner.
+- `sb tui` automatically starts inside tmux when tmux is available and the command is not already inside tmux.
+- `sb tui --no-tmux` runs the Textual UI directly without tmux bootstrap.
+- `sb tui --auto-index` updates stale sources before opening the UI.
 - `Ctrl-R` in the TUI resumes the selected session in a tmux split pane or warns clearly when tmux is unavailable, the TUI is not running inside tmux, or the indexed cwd is missing.
 - Missing Claude worktree cwd warnings include a concrete `git worktree add` restore command when it can be inferred.
 - `Ctrl-W` in the TUI executes the inferred restore command for the selected session's missing worktree.
 - `Ctrl-O` in the TUI resumes externally through the normal terminal.
-- `session-search resume <provider> <session_id> --print-command` prints the actual prepared command.
-- `session-search resume <provider> <session_id> --tmux-pane` opens the prepared command in a tmux split pane when running inside tmux.
+- `sb resume <provider> <session_id> --print-command` prints the actual prepared command.
+- `sb resume <provider> <session_id> --tmux-pane` opens the prepared command in a tmux split pane when running inside tmux.
 - Tests pass locally.

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Input
 
-from session_search.tui import CONTROL_BINDINGS, SessionSearchApp
+from session_buddy.tui import CONTROL_BINDINGS, SessionSearchApp
 
 
 def test_tui_command_bindings_do_not_use_printable_query_letters() -> None:

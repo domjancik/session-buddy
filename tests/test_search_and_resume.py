@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from session_search.database import IndexDatabase
-from session_search.embeddings import Embedder
-from session_search.models import MessageRecord, SessionRecord
-from session_search.resume import (
+from session_buddy.database import IndexDatabase
+from session_buddy.embeddings import Embedder
+from session_buddy.models import MessageRecord, SessionRecord
+from session_buddy.resume import (
     PreparedResumeCommand,
     build_restore_worktree_argv,
     build_restore_worktree_command,
@@ -17,7 +17,7 @@ from session_search.resume import (
     run_prepared_resume,
     run_restore_worktree,
 )
-from session_search.search import search_sessions
+from session_buddy.search import search_sessions
 
 
 def test_search_finds_indexed_session(tmp_path: Path) -> None:
@@ -190,7 +190,7 @@ def test_run_restore_worktree_runs_git_argv(monkeypatch: pytest.MonkeyPatch, tmp
         Path(argv[5]).mkdir(parents=True)
         return subprocess.CompletedProcess(argv, 0, "restored", "")
 
-    monkeypatch.setattr("session_search.resume.subprocess.run", fake_run)
+    monkeypatch.setattr("session_buddy.resume.subprocess.run", fake_run)
 
     assert run_restore_worktree(prepared) == "restored"
     assert calls == [prepared.restore_worktree_argv]
@@ -207,7 +207,7 @@ def test_run_restore_worktree_reports_git_failure(monkeypatch: pytest.MonkeyPatc
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(argv, 128, "", "branch is already checked out")
 
-    monkeypatch.setattr("session_search.resume.subprocess.run", fake_run)
+    monkeypatch.setattr("session_buddy.resume.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="branch is already checked out"):
         run_restore_worktree(prepared)

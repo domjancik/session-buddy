@@ -13,13 +13,52 @@ from .tmux import build_tmux_pane_command, open_tmux_pane, run_command_in_new_tm
 from .tui import run_tui
 
 
-DEFAULT_DB = Path(".session-search/index.sqlite")
+DEFAULT_DB = Path.home() / ".session-buddy" / "index.sqlite"
+
+SUBCOMMANDS = ("index", "search", "tui", "status", "resume")
+
+
+def default_db_path() -> Path:
+    override = os.environ.get("SESSION_BUDDY_DB")
+    return Path(override).expanduser() if override else DEFAULT_DB
+
+
+def expanded_path(value: str) -> Path:
+    return Path(value).expanduser()
+
+
+def program_name() -> str:
+    name = Path(sys.argv[0]).name if sys.argv and sys.argv[0] else ""
+    return name if name and name != "__main__.py" else "session-buddy"
+
+
+GLOBAL_FLAGS_WITH_VALUE = ("--db",)
+GLOBAL_FLAGS = ("--auto-index",)
+
+
+def insert_default_subcommand(argv: list[str]) -> list[str]:
+    """Treat a bare query as `search <query>` so the common case needs no subcommand."""
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in SUBCOMMANDS or token in ("-h", "--help"):
+            return argv
+        if token in GLOBAL_FLAGS_WITH_VALUE:
+            index += 2
+            continue
+        if token in GLOBAL_FLAGS or any(token.startswith(f"{flag}=") for flag in GLOBAL_FLAGS_WITH_VALUE):
+            index += 1
+            continue
+        if token.startswith("-"):
+            return argv
+        return [*argv[:index], "search", *argv[index:]]
+    return argv
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
-    args._session_search_argv = current_launch_argv(argv)
+    args = parser.parse_args(insert_default_subcommand(list(argv if argv is not None else sys.argv[1:])))
+    args._session_buddy_argv = current_launch_argv(argv)
     if not hasattr(args, "func"):
         parser.print_help()
         return 2
@@ -28,16 +67,27 @@ def main(argv: list[str] | None = None) -> int:
 
 def current_launch_argv(argv: list[str] | None = None) -> list[str]:
     if argv is not None:
-        return [sys.executable, "-m", "session_search", *argv]
+        return [sys.executable, "-m", "session_buddy", *argv]
     current = list(sys.argv)
     if current and Path(current[0]).name == "__main__.py":
-        return [sys.executable, "-m", "session_search", *current[1:]]
+        return [sys.executable, "-m", "session_buddy", *current[1:]]
     return current
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="session-search")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="Index database path.")
+    parser = argparse.ArgumentParser(prog=program_name())
+    parser.add_argument(
+        "--db",
+        type=expanded_path,
+        default=default_db_path(),
+        help="Index database path. Defaults to $SESSION_BUDDY_DB or ~/.session-buddy/index.sqlite.",
+    )
+    parser.add_argument(
+        "--auto-index",
+        dest="global_auto_index",
+        action="store_true",
+        help="Update stale sources first. Accepted before the subcommand so it can live in a shell alias.",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     index_parser = subparsers.add_parser("index", help="Index Claude and Codex sessions.")
@@ -73,7 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser.set_defaults(func=cmd_status)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an indexed session.")
-    resume_parser.add_argument("provider", choices=["claude", "codex"])
+    resume_parser.add_argument(
+        "provider",
+        nargs="?",
+        choices=["claude", "codex"],
+        help="Optional. Inferred from the index when the session id is unambiguous.",
+    )
     resume_parser.add_argument("session_id")
     resume_parser.add_argument("--cwd", help="Override indexed cwd.")
     resume_parser.add_argument("--print-command", action="store_true", help="Print the command instead of running it.")
@@ -114,8 +169,12 @@ def cmd_index(args: argparse.Namespace) -> int:
     return 1 if stats.failed else 0
 
 
+def wants_auto_index(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "auto_index", False) or getattr(args, "global_auto_index", False))
+
+
 def cmd_search(args: argparse.Namespace) -> int:
-    handle_freshness_for_process(args, auto_index=args.auto_index, semantic=not args.no_semantic)
+    handle_freshness_for_process(args, auto_index=wants_auto_index(args), semantic=not args.no_semantic)
     results = search_sessions(
         args.db,
         args.query,
@@ -140,11 +199,11 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_tui(args: argparse.Namespace) -> int:
     if not args.no_tmux:
-        returncode = run_command_in_new_tmux_session_if_available(args._session_search_argv, cwd=os.getcwd())
+        returncode = run_command_in_new_tmux_session_if_available(args._session_buddy_argv, cwd=os.getcwd())
         if returncode is not None:
             return returncode
 
-    freshness_message = handle_freshness_for_process(args, auto_index=args.auto_index, semantic=True)
+    freshness_message = handle_freshness_for_process(args, auto_index=wants_auto_index(args), semantic=True)
     run_tui(args.db, args.query, provider=args.provider, cwd_filter=args.cwd, index_status=freshness_message)
     return 0
 
@@ -186,7 +245,7 @@ def handle_freshness_for_process(args: argparse.Namespace, auto_index: bool, sem
     freshness = check_index_freshness(args.db, claude_home, codex_home)
     message = freshness.summary()
     if freshness.stale:
-        print(f"{message} Run `session-search index` or pass `--auto-index`.", file=sys.stderr)
+        print(f"{message} Run `{program_name()} index` or pass `--auto-index`.", file=sys.stderr)
     return message
 
 
@@ -195,10 +254,20 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print("--exec cannot be used with --tmux-pane", file=sys.stderr)
         return 2
 
-    try:
-        command = load_resume_command(args.db, args.provider, args.session_id, cwd_override=args.cwd)
-    except KeyError as error:
-        print(str(error), file=sys.stderr)
+    providers = [args.provider] if args.provider else ["claude", "codex"]
+    command = None
+    errors: list[str] = []
+    for provider in providers:
+        try:
+            command = load_resume_command(args.db, provider, args.session_id, cwd_override=args.cwd)
+            break
+        except KeyError as error:
+            errors.append(str(error))
+    if command is None:
+        if args.provider:
+            print(errors[-1], file=sys.stderr)
+        else:
+            print(f"No indexed claude or codex session with id {args.session_id}", file=sys.stderr)
         return 1
     if args.print_command or args.tmux_pane:
         try:

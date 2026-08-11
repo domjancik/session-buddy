@@ -1,5 +1,5 @@
 [project]
-name = "session-search"
+name = "session-buddy"
 version = "0.1.0"
 description = "Search and resume local Claude and Codex sessions."
 requires-python = ">=3.11"
@@ -17,7 +17,8 @@ test = [
 ]
 
 [project.scripts]
-session-search = "session_search.cli:main"
+sb = "session_buddy.cli:main"
+session-buddy = "session_buddy.cli:main"
 
 [tool.uv]
 package = true

@@ -4,8 +4,8 @@ import subprocess
 
 import pytest
 
-from session_search.resume import PreparedResumeCommand
-from session_search.tmux import (
+from session_buddy.resume import PreparedResumeCommand
+from session_buddy.tmux import (
     TMUX_BOOTSTRAP_ENV,
     build_tmux_session_command,
     build_tmux_pane_command,
@@ -66,7 +66,7 @@ def test_tmux_bootstrap_guard_checks_environment() -> None:
 
 
 def test_should_bootstrap_tmux_requires_tmux_outside_tmux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
 
     assert should_bootstrap_tmux({}) is True
     assert should_bootstrap_tmux({"TMUX": "inside"}) is False
@@ -74,16 +74,16 @@ def test_should_bootstrap_tmux_requires_tmux_outside_tmux(monkeypatch: pytest.Mo
 
 
 def test_should_bootstrap_tmux_skips_when_tmux_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: None)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: None)
 
     assert should_bootstrap_tmux({}) is False
 
 
 def test_build_tmux_session_command_sets_guard_and_cwd() -> None:
     command = build_tmux_session_command(
-        ["session-search", "tui", "checkout bug"],
+        ["session-buddy", "tui", "checkout bug"],
         cwd="/repo with spaces",
-        session_name="session-search-test",
+        session_name="session-buddy-test",
         tmux_executable="/usr/bin/tmux",
     )
 
@@ -91,90 +91,90 @@ def test_build_tmux_session_command_sets_guard_and_cwd() -> None:
         "/usr/bin/tmux",
         "new-session",
         "-s",
-        "session-search-test",
+        "session-buddy-test",
         "-n",
         "search",
         "-c",
         "/repo with spaces",
         "-e",
         f"{TMUX_BOOTSTRAP_ENV}=1",
-        "session-search",
+        "session-buddy",
         "tui",
         "checkout bug",
     ]
-    assert command.shell_line().startswith("/usr/bin/tmux new-session -s session-search-test")
+    assert command.shell_line().startswith("/usr/bin/tmux new-session -s session-buddy-test")
 
 
 def test_run_command_in_new_tmux_session_if_available_skips_without_tmux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: None)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: None)
 
-    assert run_command_in_new_tmux_session_if_available(["session-search", "tui"], cwd="/repo") is None
+    assert run_command_in_new_tmux_session_if_available(["session-buddy", "tui"], cwd="/repo") is None
 
 
 def test_run_command_in_new_tmux_session_if_available_skips_inside_tmux(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
-    monkeypatch.setattr("session_search.tmux.inside_tmux", lambda: True)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.inside_tmux", lambda: True)
 
-    assert run_command_in_new_tmux_session_if_available(["session-search", "tui"], cwd="/repo") is None
+    assert run_command_in_new_tmux_session_if_available(["session-buddy", "tui"], cwd="/repo") is None
 
 
 def test_run_command_in_new_tmux_session_if_available_runs_new_session(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
-    monkeypatch.setattr("session_search.tmux.inside_tmux", lambda: False)
-    monkeypatch.setattr("session_search.tmux.tmux_bootstrap_guarded", lambda: False)
-    monkeypatch.setattr("session_search.tmux.os.getpid", lambda: 12345)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.inside_tmux", lambda: False)
+    monkeypatch.setattr("session_buddy.tmux.tmux_bootstrap_guarded", lambda: False)
+    monkeypatch.setattr("session_buddy.tmux.os.getpid", lambda: 12345)
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 7, "", "")
 
-    monkeypatch.setattr("session_search.tmux.subprocess.run", fake_run)
+    monkeypatch.setattr("session_buddy.tmux.subprocess.run", fake_run)
 
-    assert run_command_in_new_tmux_session_if_available(["session-search", "tui"], cwd="/repo") == 7
+    assert run_command_in_new_tmux_session_if_available(["session-buddy", "tui"], cwd="/repo") == 7
     assert calls == [
         [
             "/usr/bin/tmux",
             "new-session",
             "-s",
-            "session-search-12345",
+            "session-buddy-12345",
             "-n",
             "search",
             "-c",
             "/repo",
             "-e",
             f"{TMUX_BOOTSTRAP_ENV}=1",
-            "session-search",
+            "session-buddy",
             "tui",
         ]
     ]
 
 
 def test_prepare_tmux_pane_requires_tmux_executable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: None)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: None)
 
     with pytest.raises(RuntimeError, match="Could not find executable: tmux"):
         prepare_tmux_pane_command(prepared_command())
 
 
 def test_prepare_tmux_pane_requires_tmux_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
-    monkeypatch.setattr("session_search.tmux.inside_tmux", lambda: False)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.inside_tmux", lambda: False)
 
-    with pytest.raises(RuntimeError, match="requires running session-search inside tmux"):
+    with pytest.raises(RuntimeError, match="requires running session-buddy inside tmux"):
         prepare_tmux_pane_command(prepared_command())
 
 
 def test_open_tmux_pane_runs_split_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
-    monkeypatch.setattr("session_search.tmux.inside_tmux", lambda: True)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.inside_tmux", lambda: True)
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    monkeypatch.setattr("session_search.tmux.subprocess.run", fake_run)
+    monkeypatch.setattr("session_buddy.tmux.subprocess.run", fake_run)
 
     pane = open_tmux_pane(prepared_command())
 
@@ -183,13 +183,13 @@ def test_open_tmux_pane_runs_split_command(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_open_tmux_pane_reports_tmux_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("session_search.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
-    monkeypatch.setattr("session_search.tmux.inside_tmux", lambda: True)
+    monkeypatch.setattr("session_buddy.tmux.resolve_tmux_executable", lambda: "/usr/bin/tmux")
+    monkeypatch.setattr("session_buddy.tmux.inside_tmux", lambda: True)
 
     def fake_run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(argv, 1, "", "no current client")
 
-    monkeypatch.setattr("session_search.tmux.subprocess.run", fake_run)
+    monkeypatch.setattr("session_buddy.tmux.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="no current client"):
         open_tmux_pane(prepared_command())

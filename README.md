@@ -1,8 +1,19 @@
-# Session Search
+# Session Buddy
 
 Local full-text, fuzzy, and semantic search over Claude and Codex session history.
 
 ## Install
+
+Install the CLI on your PATH:
+
+```sh
+uv tool install git+https://github.com/domjancik/session-buddy
+```
+
+This installs two equivalent executables: `sb` and `session-buddy`.
+The short form is used throughout this README.
+
+For local development instead:
 
 ```sh
 uv sync --extra test
@@ -12,15 +23,27 @@ For higher-quality local semantic embeddings, install the optional model stack:
 
 ```sh
 uv sync --python 3.12 --extra test --extra semantic
-uv run session-search index --force --semantic-backend sentence-transformers
+sb index --force --semantic-backend sentence-transformers
 ```
 
 Without the semantic extra, the tool still provides local semantic-style matching with deterministic hashed embeddings.
 
+## Claude Code Skill
+
+`skills/session-buddy/` is a Claude Code skill so agents reach for this tool instead of
+hand-rolling a grep over `~/.claude/projects`. Link it once:
+
+```sh
+ln -s "$PWD/skills/session-buddy" ~/.claude/skills/session-buddy
+```
+
+Then agents pick it up automatically on prompts like "find the session that reviewed PR 1234"
+or "did we already investigate this?". Symlinking keeps it updated with `git pull`.
+
 ## Index Sessions
 
 ```sh
-uv run session-search index
+sb index
 ```
 
 By default this scans:
@@ -30,12 +53,48 @@ By default this scans:
 - `~/.codex/state_5.sqlite`
 - `~/.codex/session_index.jsonl`
 
-The index is stored at `.session-search/index.sqlite`.
+The index is stored at `~/.session-buddy/index.sqlite`, so every directory shares one index.
+Override with `--db <path>` or the `SESSION_BUDDY_DB` environment variable.
+
+## Keeping The Index Fresh
+
+Indexing is not automatic on its own. Two pieces make it feel automatic:
+
+**1. A shell alias** so every search refreshes stale sources first:
+
+```sh
+alias sb='command sb --auto-index'
+```
+
+`--auto-index` is accepted before the subcommand precisely so it can live in an alias.
+
+**2. A Claude Code `SessionEnd` hook** so a transcript is indexed the moment it stops changing,
+which keeps the alias cheap — there is usually nothing left to index. In `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionEnd": [{
+      "hooks": [{
+        "type": "command",
+        "command": "L=/tmp/sb-index.lock; [ -d \"$L\" ] && [ -z \"$(find \"$L\" -maxdepth 0 -mmin -10)\" ] && rmdir \"$L\" 2>/dev/null; mkdir \"$L\" 2>/dev/null || exit 0; trap 'rmdir \"$L\" 2>/dev/null' EXIT; sb index --prune >/dev/null 2>&1",
+        "async": true,
+        "timeout": 300
+      }]
+    }]
+  }
+}
+```
+
+Use an absolute path to `sb` — the hook does not inherit your interactive shell's `PATH`.
+The `mkdir` lock keeps two sessions ending at once from writing the index concurrently, and
+self-clears if a run dies holding it. `--prune` drops sessions whose transcripts were deleted by
+Claude Code's retention policy; without it they linger in the index forever.
 
 ## Index Status
 
 ```sh
-uv run session-search status
+sb status
 ```
 
 Status reports new, changed, deleted, and unchanged session sources. A source is considered changed when its transcript file changes or when provider metadata changes, such as Claude `sessions-index.json` or Codex per-session thread/index metadata.
@@ -43,9 +102,10 @@ Status reports new, changed, deleted, and unchanged session sources. A source is
 ## Search
 
 ```sh
-uv run session-search search "webhook retry"
-uv run session-search search "acme-mono" --provider codex --limit 20
-uv run session-search search "routing" --auto-index
+sb "webhook retry"                    # a bare query means search
+sb search "webhook retry"             # explicit form
+sb "acme-mono" --provider codex --limit 20
+sb "routing" --auto-index
 ```
 
 Search warns when the index is stale. Pass `--auto-index` to update changed sources and prune deleted index entries before searching.
@@ -55,12 +115,12 @@ Search warns when the index is stale. Pass `--auto-index` to update changed sour
 The terminal UI is built with Textual.
 
 ```sh
-uv run session-search tui
-uv run session-search tui --auto-index
-uv run session-search tui --no-tmux
+sb tui
+sb tui --auto-index
+sb tui --no-tmux
 ```
 
-When `tmux` is available and the command is not already running inside tmux, `session-search tui` starts a temporary tmux session automatically. That makes `Ctrl-R` pane resume available without manually starting tmux first. Pass `--no-tmux` to run the Textual UI directly.
+When `tmux` is available and the command is not already running inside tmux, `sb tui` starts a temporary tmux session automatically. That makes `Ctrl-R` pane resume available without manually starting tmux first. Pass `--no-tmux` to run the Textual UI directly.
 
 The TUI shows an index-status banner on startup. Pass `--auto-index` to update changed sources and prune deleted index entries before opening the interface.
 
@@ -80,9 +140,10 @@ Tmux-pane resume creates a real tmux pane with the selected agent command, so Cl
 ## Resume
 
 ```sh
-uv run session-search resume codex 019eabd2-9955-77e0-8fd8-2927fbbd3cff
-uv run session-search resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698
-uv run session-search resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-pane
+sb resume 019eabd2-9955-77e0-8fd8-2927fbbd3cff          # provider inferred
+sb resume codex 019eabd2-9955-77e0-8fd8-2927fbbd3cff    # explicit
+sb resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698
+sb resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-pane
 ```
 
 Codex resumes with `codex resume -C <cwd> <session_id>`.

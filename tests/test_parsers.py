@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from session_search.parsers import (
+from session_buddy.parsers import (
     load_claude_indexes,
     load_codex_session_index,
     parse_claude_session,
@@ -37,7 +37,7 @@ def test_parse_codex_session_reads_meta_and_messages() -> None:
     assert record is not None
     assert record.provider == "codex"
     assert record.session_id == "22222222-2222-2222-2222-222222222222"
-    assert record.cwd == "/Users/example/dev/session-search"
+    assert record.cwd == "/Users/example/dev/session-buddy"
     assert record.git_branch == "feature/search"
     assert record.title == "Build session search"
     assert len(record.messages) == 2

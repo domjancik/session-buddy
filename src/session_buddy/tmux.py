@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from .resume import PreparedResumeCommand
 
 
-TMUX_BOOTSTRAP_ENV = "SESSION_SEARCH_TMUX_BOOTSTRAPPED"
+TMUX_BOOTSTRAP_ENV = "SESSION_BUDDY_TMUX_BOOTSTRAPPED"
 
 
 @dataclass(slots=True)
@@ -78,7 +78,7 @@ def run_command_in_new_tmux_session_if_available(command_argv: list[str], *, cwd
     command = build_tmux_session_command(
         command_argv,
         cwd=cwd,
-        session_name=f"session-search-{os.getpid()}",
+        session_name=f"session-buddy-{os.getpid()}",
         tmux_executable=tmux,
     )
     return subprocess.run(command.argv, check=False).returncode
@@ -107,7 +107,7 @@ def prepare_tmux_pane_command(command: PreparedResumeCommand, *, split: str = "r
     if tmux is None:
         raise RuntimeError("Could not find executable: tmux. Install tmux or use external resume.")
     if not inside_tmux():
-        raise RuntimeError("Tmux pane resume requires running session-search inside tmux. Use Ctrl-O external resume or start tmux first.")
+        raise RuntimeError("Tmux pane resume requires running session-buddy inside tmux. Use Ctrl-O external resume or start tmux first.")
     return build_tmux_pane_command(command, split=split, tmux_executable=tmux)
 
 
