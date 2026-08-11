@@ -1,6 +1,6 @@
 ---
 name: session-buddy
-description: Search and resume past Claude Code and Codex sessions by content. Use whenever the answer might already exist in an earlier session — "find the session that...", "which agent did X", "did we already investigate Y", "resume the session about Z", "what was the conclusion on <ticket>" — or when the user references prior work you have no context for. Use it before re-deriving an investigation from scratch. Searches transcripts across every repo, worktree, and both providers; grepping ~/.claude/projects is the inferior fallback.
+description: Search and resume past Claude Code and Codex sessions by content. Use whenever the answer might already exist in an earlier session — "find the session that...", "which agent did X", "did we already investigate Y", "resume the session about Z", "what was the conclusion on <ticket>" — or when the user references prior work you have no context for. Use it before re-deriving an investigation from scratch. Searches transcripts across every repo, worktree, and both providers; grepping the raw transcript directories is the inferior fallback.
 ---
 
 # Session Buddy
@@ -80,8 +80,8 @@ sb tui
 ```
 
 `Ctrl-R` resume in a tmux pane, `Ctrl-O` resume externally, `Ctrl-W` restore a missing worktree,
-`Ctrl-P` preview, `Esc` quit. Do not launch this from an agent turn. Suggest it with a `!` prefix
-when the user wants to browse rather than get one answer.
+`Ctrl-P` preview, `Esc` quit. Do not launch this from an agent turn — it takes over the terminal.
+Hand the user the command to run themselves when they want to browse rather than get one answer.
 
 ## Reporting back
 

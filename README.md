@@ -28,17 +28,28 @@ sb index --force --semantic-backend sentence-transformers
 
 Without the semantic extra, the tool still provides local semantic-style matching with deterministic hashed embeddings.
 
-## Claude Code Skill
+## Agent Skill
 
-`skills/session-buddy/` is a Claude Code skill so agents reach for this tool instead of
-hand-rolling a grep over `~/.claude/projects`. Link it once:
+`skills/session-buddy/` is a skill so coding agents reach for this tool instead of hand-rolling a
+grep over the raw transcript directories. The same directory works for both harnesses — Claude
+Code and Codex use the same `SKILL.md` format.
 
 ```sh
+git clone https://github.com/domjancik/session-buddy
+cd session-buddy
+
+# Claude Code
 ln -s "$PWD/skills/session-buddy" ~/.claude/skills/session-buddy
+
+# Codex (honours $CODEX_HOME, defaults to ~/.codex)
+mkdir -p ~/.codex/skills && ln -s "$PWD/skills/session-buddy" ~/.codex/skills/session-buddy
 ```
 
-Then agents pick it up automatically on prompts like "find the session that reviewed PR 1234"
-or "did we already investigate this?". Symlinking keeps it updated with `git pull`.
+Agents then pick it up on prompts like "find the session that reviewed PR 1234" or "did we
+already investigate this?". Symlinking keeps it current with `git pull`.
+
+**Restart your agent after linking** — both harnesses load skills at session start, so a session
+already running will not see it.
 
 ## Index Sessions
 
