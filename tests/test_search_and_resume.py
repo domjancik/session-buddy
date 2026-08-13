@@ -37,7 +37,7 @@ def test_search_finds_indexed_session(tmp_path: Path) -> None:
         message_count=1,
         first_prompt="Investigate webhook retry failure",
         summary="",
-        preview="The session discusses inbound webhook retry routing.",
+        preview="The session discusses webhook retry routing.",
         messages=[
             MessageRecord(
                 provider="codex",
@@ -45,14 +45,14 @@ def test_search_finds_indexed_session(tmp_path: Path) -> None:
                 idx=0,
                 role="user",
                 timestamp=1781000000000,
-                text="Investigate inbound webhook retry routing failure",
+                text="Investigate webhook retry routing failure",
             )
         ],
     )
     db.upsert_session(record, Embedder("hash"))
     db.close()
 
-    results = search_sessions(db_path, "inbound enrichment", limit=5)
+    results = search_sessions(db_path, "webhook routing", limit=5)
 
     assert results
     assert results[0].session_id == "s1"
