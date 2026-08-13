@@ -102,6 +102,33 @@ The `mkdir` lock keeps two sessions ending at once from writing the index concur
 self-clears if a run dies holding it. `--prune` drops sessions whose transcripts were deleted by
 Claude Code's retention policy; without it they linger in the index forever.
 
+## Orchestrator Metadata (Traycer, and later tools)
+
+Tools that *run* agent sessions rather than author them — Traycer today, Omnigent-style
+meta-harnesses later — can attach metadata to sessions they orchestrate. Session Buddy calls
+these **annotators**; see [docs/data-model.md](docs/data-model.md) for the model and how to add
+one.
+
+```sh
+uv tool install "git+https://github.com/domjancik/session-buddy[traycer]"
+sb index          # annotations attach automatically when the tool is present
+```
+
+Traycer contributes the epic and per-agent titles it already holds. That fixes the worst titles
+in the index: an orchestrated session whose transcript opens with machine chatter is indexed as
+`<task-notification> <task-id>bi8qdvx1g…`, while Traycer knows it as
+`ACME-142 retry backoff gate`.
+
+```sh
+sb "retry backoff" --show-ext              # show annotator metadata under each hit
+sb "retry backoff" --ext traycer.epic_title=Payments   # scope to one epic
+sb "migration" --ext traycer                  # only sessions Traycer orchestrated
+sb groups                                     # list epics: id, agent count, title
+```
+
+Without the extra installed, or with no such tool on the machine, everything above is simply
+absent — indexing and search are unaffected.
+
 ## Index Status
 
 ```sh

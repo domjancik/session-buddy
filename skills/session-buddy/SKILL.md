@@ -25,6 +25,14 @@ sb "retry backoff PR review" --limit 8
 | `--cwd <substring>` | scope to one repo across all its worktrees, e.g. `--cwd acme-mono` |
 | `--auto-index` | refresh stale sources first; a full pass takes ~1 min |
 | `--no-semantic` | literal matching only |
+| `--ext SOURCE[.KEY][=VALUE]` | filter on orchestrator metadata, e.g. `--ext traycer.epic_title=Payments` |
+| `--show-ext` | print that metadata under each hit |
+
+Orchestrators (Traycer today) may annotate sessions they ran. When present, titles come from
+the orchestrator rather than the transcript's first line, and `sb groups` lists the epics with
+id, agent count, and title. Use `--ext traycer` to restrict to orchestrated sessions, and
+`--show-ext` when the user asks which epic or agent a session belonged to. None of this exists
+on a machine without the tool — treat its absence as normal, not as an error.
 
 Results carry relevance score, session id, cwd, git branch, last-updated time, and inline
 matched excerpts. Read the excerpts first — they often already contain the answer, so no

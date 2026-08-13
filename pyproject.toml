@@ -8,6 +8,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+traycer = [
+    "pycrdt>=0.10",
+]
 semantic = [
     "numpy>=1.26",
     "sentence-transformers>=3.0",
