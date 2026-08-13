@@ -9,19 +9,31 @@ from session_buddy.annotators.traycer import TraycerAnnotator, first_workspace
 pycrdt = pytest.importorskip("pycrdt", reason="traycer extra not installed")
 
 
-def write_epic(root, epic_id, title, agents, *, updated_at=1700000000000):
+def write_epic(root, epic_id, title, agents, *, chats=(), updated_at=1700000000000):
     """Build a Yjs doc shaped like Traycer's epic record and persist it as a seed."""
     from pycrdt import Doc, Map
 
     doc = Doc()
     epic = doc.get("epic", type=Map)
     tui = Map()
+    chat_map = Map()
     epic["id"] = epic_id
     epic["title"] = title
     epic["updatedAt"] = updated_at
     epic["tuiAgents"] = tui
+    epic["chats"] = chat_map
     for agent in agents:
         tui[agent["id"]] = Map(agent)
+    for chat in chats:
+        chain = chat.pop("activeSessionChain", None)
+        entry = Map(dict(chat))
+        chat_map[chat["id"]] = entry
+        if chain is not None:
+            snapshot = chain.pop("sessionWorkspaceSnapshot", None)
+            chain_map = Map(dict(chain))
+            entry["activeSessionChain"] = chain_map
+            if snapshot is not None:
+                chain_map["sessionWorkspaceSnapshot"] = Map(dict(snapshot))
     seeds = root / "epics" / epic_id / "seeds"
     seeds.mkdir(parents=True, exist_ok=True)
     (seeds / "epic.bin").write_bytes(doc.get_update())
@@ -52,7 +64,8 @@ def test_collect_joins_agents_to_provider_sessions(tmp_path):
     pairs = {(a.key, a.value) for a in result.annotations}
     assert ("epic_title", "Payments Integration Analysis") in pairs
     assert ("agent_title", "ACME-142 retry backoff gate") in pairs
-    assert ("parent_agent_id", "agent-parent") in pairs
+    assert ("parent_id", "agent-parent") in pairs
+    assert ("kind", "agent") in pairs
     assert ("workspace", "/repo/worktree-a") in pairs
     assert {a.provider for a in result.annotations} == {"claude"}
     assert {a.session_id for a in result.annotations} == {"session-1"}
@@ -128,3 +141,58 @@ def test_missing_pycrdt_degrades_to_a_warning(tmp_path, monkeypatch):
 )
 def test_first_workspace(value, expected):
     assert first_workspace(value) == expected
+
+
+CHAT = {
+    "id": "chat-1",
+    "title": "PR 128 Alignment Review",
+    "parentId": "chat-parent",
+    "activeSessionChain": {
+        "harnessId": "codex",
+        "sessionId": "019f0000-0000-7000-8000-000000000001",
+        "sessionWorkspaceSnapshot": {"primaryWorkspace": "/repo/acme-mono"},
+    },
+}
+
+
+def test_gui_chats_are_joined_too(tmp_path):
+    """An epic driven from the desktop app has tuiAgents: [] and all work under chats."""
+    write_epic(tmp_path, "epic-1", "Design Review", [], chats=[dict(CHAT)])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    pairs = {(a.key, a.value) for a in result.annotations}
+    assert ("chat_title", "PR 128 Alignment Review") in pairs
+    assert ("epic_title", "Design Review") in pairs
+    assert ("kind", "chat") in pairs
+    assert ("workspace", "/repo/acme-mono") in pairs
+    assert {a.session_id for a in result.annotations} == {"019f0000-0000-7000-8000-000000000001"}
+    assert {a.provider for a in result.annotations} == {"codex"}
+
+
+def test_chat_title_is_claimed(tmp_path):
+    write_epic(tmp_path, "epic-1", "Epic", [], chats=[dict(CHAT)])
+
+    titles = TraycerAnnotator().collect(tmp_path).titles
+
+    assert [(t.provider, t.session_id, t.title) for t in titles] == [
+        ("codex", "019f0000-0000-7000-8000-000000000001", "PR 128 Alignment Review")
+    ]
+
+
+def test_chat_without_a_session_chain_is_skipped(tmp_path):
+    write_epic(tmp_path, "epic-1", "Epic", [], chats=[{"id": "chat-1", "title": "Draft"}])
+
+    assert TraycerAnnotator().collect(tmp_path).annotations == []
+
+
+def test_agents_and_chats_both_counted_in_groups(tmp_path):
+    write_epic(tmp_path, "epic-1", "Mixed", [AGENT], chats=[dict(CHAT)])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    assert result.groups[0]["agents"] == "2"
+    assert {a.session_id for a in result.annotations} == {
+        "session-1",
+        "019f0000-0000-7000-8000-000000000001",
+    }

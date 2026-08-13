@@ -128,13 +128,23 @@ map is the epic record defined in `traycerai/traycer` at
   chats, artifacts, deletedArtifacts, tuiAgents, roleClaims }
 ```
 
-`tuiAgents[]` is the join: each entry carries `harnessId` (our `provider`) and
-`harnessSessionId` (our `session_id`), plus a human `title`.
+Traycer binds harness sessions in **two** containers, and both must be read:
 
-Keys written: `epic_id`, `epic_title`, `agent_id`, `agent_title`, `parent_agent_id`, `workspace`.
+- `tuiAgents[]` — terminal agents; the binding is `harnessId` + `harnessSessionId` on the entry.
+- `chats[]` — desktop-app chats; the binding is `activeSessionChain.{harnessId, sessionId}`.
 
-Two traps worth recording:
+Both normalise to one *binding* (kind, id, title, parent, provider, session_id, workspace).
 
+Keys written: `epic_id`, `epic_title`, `kind`, `parent_id`, `workspace`, plus `agent_id` /
+`agent_title` for terminal agents and `chat_id` / `chat_title` for chats.
+
+Three traps worth recording:
+
+- **Reading only `tuiAgents` misses every GUI chat.** An epic driven from the desktop app has
+  `tuiAgents: []` and all of its sessions under `chats` — that was a real bug, and the sessions
+  it silently skipped were the ones a search most needed titles for.
+- `activeSessionChain` names the *live* session only. A chat that was forked or resumed no
+  longer references its earlier sessions, so those stay un-annotated.
 - `desktop-windows.json` also contains epic names, but only for tabs that are currently open —
   on a real machine that was 10 of 52 epics. It is not a usable source.
 - The seed is the only complete local copy of an epic title. Reading it requires an actual Yjs

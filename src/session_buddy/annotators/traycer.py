@@ -7,10 +7,20 @@ Yjs update binaries whose root map is the epic record defined in traycerai/trayc
     { id, title, isTitleEditedByUser, createdAt, updatedAt,
       chats, artifacts, deletedArtifacts, tuiAgents, roleClaims }
 
-`tuiAgents[]` is the join to us: each carries `harnessId` (our provider) and
-`harnessSessionId` (our session_id), plus a human `title` that is far better than the
-first-prompt fallback we derive for orchestrated sessions, whose opening message is
-usually machine chatter.
+Traycer binds harness sessions in two places, and both must be read:
+
+- `tuiAgents[]` - terminal agents. Each carries `harnessId` (our provider) and
+  `harnessSessionId` (our session_id).
+- `chats[]` - GUI chats. The binding lives in `activeSessionChain.{harnessId, sessionId}`.
+
+Reading only `tuiAgents` misses every GUI chat: an epic driven from the desktop app has
+`tuiAgents: []` and all of its work under `chats`.
+
+Both carry a human `title`, far better than the first-prompt fallback we derive for
+orchestrated sessions, whose opening message is usually machine chatter.
+
+`activeSessionChain` names the *live* session only. A chat that was forked or resumed may
+have earlier sessions that it no longer references, so those stay un-annotated.
 
 `desktop-windows.json` also holds epic names, but only for tabs that happen to be open,
 so it is not a usable source.
@@ -72,31 +82,31 @@ class TraycerAnnotator:
                     "id": record["id"],
                     "title": record["title"],
                     "updated_at": str(record["updated_at"]),
-                    "agents": str(len(record["agents"])),
+                    "agents": str(len(record["bindings"])),
                 }
             )
-            for agent in record["agents"]:
-                provider = agent.get("harnessId") or ""
-                session_id = agent.get("harnessSessionId") or ""
+            for binding in record["bindings"]:
+                provider = binding["provider"]
+                session_id = binding["session_id"]
                 if not provider or not session_id:
                     continue
                 pairs = {
                     "epic_id": record["id"],
                     "epic_title": record["title"],
-                    "agent_id": agent.get("id", ""),
-                    "agent_title": agent.get("title", ""),
-                    "parent_agent_id": agent.get("parentId", "") or "",
-                    "workspace": first_workspace(agent.get("workspaceFolders")),
+                    "kind": binding["kind"],
+                    f"{binding['kind']}_id": binding["id"],
+                    f"{binding['kind']}_title": binding["title"],
+                    "parent_id": binding["parent_id"],
+                    "workspace": binding["workspace"],
                 }
                 for key, value in pairs.items():
                     if value:
                         result.annotations.append(
                             Annotation(provider, session_id, SOURCE, key, str(value))
                         )
-                title = (agent.get("title") or "").strip()
-                if title:
+                if binding["title"]:
                     result.titles.append(
-                        AnnotatedTitle(provider, session_id, SOURCE, title, TITLE_PRIORITY)
+                        AnnotatedTitle(provider, session_id, SOURCE, binding["title"], TITLE_PRIORITY)
                     )
         if failed:
             result.warning = f"traycer: {failed} epic seed(s) could not be decoded"
@@ -116,19 +126,73 @@ class TraycerAnnotator:
             keys = set(epic.keys())
             if "title" not in keys:
                 continue
-            agents = []
+            bindings = []
             if "tuiAgents" in keys:
-                tui = epic["tuiAgents"]
-                for agent_key in list(tui.keys()):
-                    rec = tui[agent_key]
-                    agents.append({k: rec[k] for k in rec.keys()})
+                bindings.extend(read_tui_agents(epic["tuiAgents"]))
+            if "chats" in keys:
+                bindings.extend(read_chats(epic["chats"]))
             return {
                 "id": str(epic["id"]) if "id" in keys else epic_dir.name,
                 "title": str(epic["title"] or ""),
                 "updated_at": int(epic["updatedAt"]) if "updatedAt" in keys and epic["updatedAt"] else 0,
-                "agents": agents,
+                "bindings": bindings,
             }
         return None
+
+
+def read_tui_agents(tui) -> list[dict]:
+    bindings = []
+    for key in list(tui.keys()):
+        rec = tui[key]
+        fields = {k: rec[k] for k in rec.keys()}
+        bindings.append(
+            {
+                "kind": "agent",
+                "id": str(fields.get("id") or key),
+                "title": str(fields.get("title") or "").strip(),
+                "parent_id": str(fields.get("parentId") or ""),
+                "provider": str(fields.get("harnessId") or ""),
+                "session_id": str(fields.get("harnessSessionId") or ""),
+                "workspace": first_workspace(fields.get("workspaceFolders")),
+            }
+        )
+    return bindings
+
+
+def read_chats(chats) -> list[dict]:
+    bindings = []
+    for key in list(chats.keys()):
+        rec = chats[key]
+        fields = set(rec.keys())
+        chain = rec["activeSessionChain"] if "activeSessionChain" in fields else None
+        if chain is None:
+            continue
+        chain_keys = set(chain.keys())
+        bindings.append(
+            {
+                "kind": "chat",
+                "id": str(rec["id"]) if "id" in fields else key,
+                "title": str(rec["title"] or "").strip() if "title" in fields else "",
+                "parent_id": str(rec["parentId"] or "") if "parentId" in fields else "",
+                "provider": str(chain["harnessId"] or "") if "harnessId" in chain_keys else "",
+                "session_id": str(chain["sessionId"] or "") if "sessionId" in chain_keys else "",
+                "workspace": primary_workspace(
+                    chain["sessionWorkspaceSnapshot"] if "sessionWorkspaceSnapshot" in chain_keys else None
+                ),
+            }
+        )
+    return bindings
+
+
+def primary_workspace(snapshot) -> str:
+    if snapshot is None:
+        return ""
+    try:
+        if "primaryWorkspace" in set(snapshot.keys()):
+            return str(snapshot["primaryWorkspace"] or "")
+    except AttributeError:
+        pass
+    return ""
 
 
 def first_workspace(value) -> str:
