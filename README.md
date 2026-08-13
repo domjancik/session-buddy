@@ -1,6 +1,20 @@
 # Session Buddy
 
-Local full-text, fuzzy, and semantic search over Claude and Codex session history.
+Local full-text, fuzzy, and semantic search over your coding-agent session history.
+
+## Supported Tools
+
+| Tool | Role | Reads | Needs |
+| --- | --- | --- | --- |
+| Claude Code | provider — owns transcripts | `~/.claude/projects` | built in |
+| Codex | provider — owns transcripts | `~/.codex/sessions`, `state_5.sqlite`, `session_index.jsonl` | built in |
+| Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics` | `[traycer]` extra |
+
+A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
+another tool owns — orchestrators and meta-harnesses live here, and a tool can be both. Adding
+either is a file, not a schema change: see [docs/data-model.md](docs/data-model.md).
+
+Only tools present on the machine are read; the rest are skipped silently.
 
 ## Install
 

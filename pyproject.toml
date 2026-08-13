@@ -1,7 +1,7 @@
 [project]
 name = "session-buddy"
 version = "0.1.0"
-description = "Search and resume local Claude and Codex sessions."
+description = "Search and resume local coding-agent sessions across Claude Code, Codex, and orchestrators."
 requires-python = ">=3.11"
 dependencies = [
     "textual>=0.89",
