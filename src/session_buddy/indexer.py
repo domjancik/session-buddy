@@ -9,15 +9,22 @@ from .annotators import ANNOTATORS
 from .database import IndexDatabase
 from .embeddings import Embedder
 from .parsers import (
+    default_opencode_home,
     infer_codex_id_from_filename,
     load_claude_indexes,
     load_codex_session_index,
     load_codex_thread_metadata,
+    opencode_db_path,
+    opencode_metadata_fingerprint,
+    opencode_stat_key,
+    opencode_source_path,
     parse_claude_session,
     parse_codex_session,
+    parse_opencode_session,
     safe_stat_key,
     scan_claude_sessions,
     scan_codex_sessions,
+    scan_opencode_sessions,
 )
 
 
@@ -64,12 +71,14 @@ def index_all(
     db_path: Path,
     claude_home: Path,
     codex_home: Path,
+    opencode_home: Path | None = None,
     force: bool = False,
     prune: bool = False,
     semantic: bool = True,
     semantic_backend: str = "auto",
     semantic_model: str = "BAAI/bge-small-en-v1.5",
 ) -> IndexStats:
+    opencode_home = opencode_home or default_opencode_home()
     db = IndexDatabase(db_path)
     embedder = Embedder(semantic_backend, semantic_model) if semantic else None
     stats = IndexStats(embed_backend=embedder.backend if embedder else "disabled")
@@ -126,6 +135,25 @@ def index_all(
         except Exception:
             stats.failed += 1
 
+    opencode_db = opencode_db_path(opencode_home)
+    for row in scan_opencode_sessions(opencode_home):
+        identity = Path(opencode_source_path(opencode_db, str(row.get("id") or "")))
+        seen_paths.add(str(identity))
+        metadata_fingerprint = opencode_metadata_fingerprint(row)
+        if should_skip(db, identity, force, metadata_fingerprint, stat_key=opencode_stat_key(row)):
+            stats.skipped += 1
+            continue
+        try:
+            record = parse_opencode_session(opencode_db, row)
+            if record is None:
+                stats.failed += 1
+                continue
+            record.metadata_fingerprint = metadata_fingerprint
+            db.upsert_session(record, embedder)
+            stats.indexed += 1
+        except Exception:
+            stats.failed += 1
+
     stats.total_seen = len(seen_paths)
     stats.pruned = db.mark_seen_sources(seen_paths, prune=prune)
     run_annotators(db, stats)
@@ -160,15 +188,20 @@ def run_annotators(db: IndexDatabase, stats: IndexStats, annotators=None) -> Non
     stats.retitled = db.apply_annotated_titles(titles)
 
 
-def check_index_freshness(db_path: Path, claude_home: Path, codex_home: Path) -> FreshnessStats:
+def check_index_freshness(
+    db_path: Path, claude_home: Path, codex_home: Path, opencode_home: Path | None = None
+) -> FreshnessStats:
     db = IndexDatabase(db_path)
     try:
-        return check_index_freshness_db(db, claude_home, codex_home)
+        return check_index_freshness_db(db, claude_home, codex_home, opencode_home)
     finally:
         db.close()
 
 
-def check_index_freshness_db(db: IndexDatabase, claude_home: Path, codex_home: Path) -> FreshnessStats:
+def check_index_freshness_db(
+    db: IndexDatabase, claude_home: Path, codex_home: Path, opencode_home: Path | None = None
+) -> FreshnessStats:
+    opencode_home = opencode_home or default_opencode_home()
     stats = FreshnessStats()
     seen_paths: set[str] = set()
 
@@ -188,6 +221,14 @@ def check_index_freshness_db(db: IndexDatabase, claude_home: Path, codex_home: P
             codex_metadata_fingerprint(codex_threads.get(inferred_id), codex_index.get(inferred_id)),
         )
 
+    opencode_db = opencode_db_path(opencode_home)
+    for row in scan_opencode_sessions(opencode_home):
+        identity = Path(opencode_source_path(opencode_db, str(row.get("id") or "")))
+        seen_paths.add(str(identity))
+        update_freshness_for_path(
+            stats, db, identity, opencode_metadata_fingerprint(row), stat_key=opencode_stat_key(row)
+        )
+
     for state in db.source_states():
         if state.source_path not in seen_paths:
             stats.deleted += 1
@@ -196,12 +237,18 @@ def check_index_freshness_db(db: IndexDatabase, claude_home: Path, codex_home: P
     return stats
 
 
-def update_freshness_for_path(stats: FreshnessStats, db: IndexDatabase, path: Path, metadata_fingerprint: str) -> None:
+def update_freshness_for_path(
+    stats: FreshnessStats,
+    db: IndexDatabase,
+    path: Path,
+    metadata_fingerprint: str,
+    stat_key: tuple[int, int] | None = None,
+) -> None:
     state = db.source_state(str(path))
     if state is None:
         stats.new += 1
         return
-    mtime, size = safe_stat_key(path)
+    mtime, size = stat_key if stat_key is not None else safe_stat_key(path)
     source_changed = state.file_mtime != mtime or state.file_size != size
     metadata_changed = state.metadata_fingerprint != metadata_fingerprint
     if source_changed or metadata_changed:
@@ -214,10 +261,16 @@ def update_freshness_for_path(stats: FreshnessStats, db: IndexDatabase, path: Pa
         stats.unchanged += 1
 
 
-def should_skip(db: IndexDatabase, path: Path, force: bool, metadata_fingerprint: str) -> bool:
+def should_skip(
+    db: IndexDatabase,
+    path: Path,
+    force: bool,
+    metadata_fingerprint: str,
+    stat_key: tuple[int, int] | None = None,
+) -> bool:
     if force:
         return False
-    mtime, size = safe_stat_key(path)
+    mtime, size = stat_key if stat_key is not None else safe_stat_key(path)
     state = db.source_state(str(path))
     return (
         state is not None

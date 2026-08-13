@@ -1,11 +1,11 @@
 ---
 name: session-buddy
-description: Search and resume past Claude Code and Codex sessions by content. Use whenever the answer might already exist in an earlier session — "find the session that...", "which agent did X", "did we already investigate Y", "resume the session about Z", "what was the conclusion on <ticket>" — or when the user references prior work you have no context for. Use it before re-deriving an investigation from scratch. Searches transcripts across every repo, worktree, and both providers; grepping the raw transcript directories is the inferior fallback.
+description: Search and resume past coding-agent sessions (Claude Code, Codex, opencode) by content. Use whenever the answer might already exist in an earlier session — "find the session that...", "which agent did X", "did we already investigate Y", "resume the session about Z", "what was the conclusion on <ticket>" — or when the user references prior work you have no context for. Use it before re-deriving an investigation from scratch. Searches transcripts across every repo, worktree, and every provider; grepping the raw transcript directories is the inferior fallback.
 ---
 
 # Session Buddy
 
-Local full-text + semantic search over Claude and Codex session transcripts, with resume.
+Local full-text + semantic search over Claude Code, Codex and opencode session transcripts, with resume.
 
 The CLI is `sb` (long form: `session-buddy`). If `command -v sb` finds nothing,
 say it is not installed rather than improvising a grep pipeline — point the user at the repo.
@@ -21,7 +21,7 @@ sb "retry backoff PR review" --limit 8
 | Flag | Use |
 | --- | --- |
 | `--limit N` | default 20; 6–10 keeps agent context small |
-| `--provider claude\|codex` | narrow when you know which agent ran it |
+| `--provider claude\|codex\|opencode` | narrow when you know which agent ran it |
 | `--cwd <substring>` | scope to one repo across all its worktrees, e.g. `--cwd acme-mono` |
 | `--auto-index` | refresh stale sources first; a full pass takes ~1 min |
 | `--no-semantic` | literal matching only |
@@ -99,8 +99,8 @@ pass vs. round two — rather than listing them flat.
 
 ## Gotchas
 
-- **Both providers.** Claude-only greps miss every Codex subagent. Do not filter to one provider
-  unless asked.
+- **All providers.** Claude-only greps miss every Codex subagent and every opencode session. Do not
+  filter to one provider unless asked.
 - **Raw hit counts mislead.** The session mentioning a ticket most often is usually the
   coordinating session, not the one that did the work. Trust the score and the excerpts.
 - **Subagent transcripts are indexed too**, under `<session>/subagents/agent-*.jsonl`. The real

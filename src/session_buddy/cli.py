@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .database import IndexDatabase
 from .indexer import check_index_freshness, index_all
+from .parsers import default_opencode_home
 from .resume import load_resume_command, prepare_resume_command, run_resume
 from .search import format_result_line, search_sessions
 from .text import format_time
@@ -103,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser = subparsers.add_parser("search", help="Search indexed sessions.")
     search_parser.add_argument("query")
     search_parser.add_argument("--limit", type=int, default=20)
-    search_parser.add_argument("--provider", choices=["claude", "codex"])
+    search_parser.add_argument("--provider", choices=["claude", "codex", "opencode"])
     search_parser.add_argument("--cwd", help="Only show sessions whose cwd contains this text.")
     search_parser.add_argument("--no-semantic", action="store_true")
     search_parser.add_argument("--auto-index", action="store_true", help="Update stale index sources before searching.")
@@ -121,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tui_parser = subparsers.add_parser("tui", help="Open the terminal search UI.")
     tui_parser.add_argument("query", nargs="?", default="")
-    tui_parser.add_argument("--provider", choices=["claude", "codex"])
+    tui_parser.add_argument("--provider", choices=["claude", "codex", "opencode"])
     tui_parser.add_argument("--cwd", help="Only show sessions whose cwd contains this text.")
     tui_parser.add_argument("--auto-index", action="store_true", help="Update stale index sources before opening the TUI.")
     tui_parser.add_argument("--no-tmux", action="store_true", help="Do not auto-start the TUI inside tmux.")
@@ -142,7 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument(
         "provider",
         nargs="?",
-        choices=["claude", "codex"],
+        choices=["claude", "codex", "opencode"],
         help="Optional. Inferred from the index when the session id is unambiguous.",
     )
     resume_parser.add_argument("session_id")
@@ -163,6 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
 def add_source_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--claude-home", type=Path, default=Path.home() / ".claude")
     parser.add_argument("--codex-home", type=Path, default=Path.home() / ".codex")
+    parser.add_argument("--opencode-home", type=Path, default=default_opencode_home())
 
 
 def cmd_index(args: argparse.Namespace) -> int:
@@ -170,6 +172,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         db_path=args.db,
         claude_home=args.claude_home.expanduser(),
         codex_home=args.codex_home.expanduser(),
+        opencode_home=args.opencode_home.expanduser(),
         force=args.force,
         prune=args.prune,
         semantic=not args.no_semantic,
@@ -267,6 +270,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         args.db,
         args.claude_home.expanduser(),
         args.codex_home.expanduser(),
+        args.opencode_home.expanduser(),
     )
     print(freshness.summary())
     print(f"New: {freshness.new}")
@@ -282,11 +286,13 @@ def cmd_status(args: argparse.Namespace) -> int:
 def handle_freshness_for_process(args: argparse.Namespace, auto_index: bool, semantic: bool) -> str:
     claude_home = args.claude_home.expanduser()
     codex_home = args.codex_home.expanduser()
+    opencode_home = args.opencode_home.expanduser()
     if auto_index:
         stats = index_all(
             db_path=args.db,
             claude_home=claude_home,
             codex_home=codex_home,
+            opencode_home=opencode_home,
             prune=True,
             semantic=semantic,
             semantic_backend="auto",
@@ -296,7 +302,7 @@ def handle_freshness_for_process(args: argparse.Namespace, auto_index: bool, sem
             f"failed {stats.failed}, pruned {stats.pruned}."
         )
 
-    freshness = check_index_freshness(args.db, claude_home, codex_home)
+    freshness = check_index_freshness(args.db, claude_home, codex_home, opencode_home)
     message = freshness.summary()
     if freshness.stale:
         print(f"{message} Run `{program_name()} index` or pass `--auto-index`.", file=sys.stderr)
@@ -308,7 +314,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print("--exec cannot be used with --tmux-pane", file=sys.stderr)
         return 2
 
-    providers = [args.provider] if args.provider else ["claude", "codex"]
+    providers = [args.provider] if args.provider else ["claude", "codex", "opencode"]
     command = None
     errors: list[str] = []
     for provider in providers:
@@ -321,7 +327,7 @@ def cmd_resume(args: argparse.Namespace) -> int:
         if args.provider:
             print(errors[-1], file=sys.stderr)
         else:
-            print(f"No indexed claude or codex session with id {args.session_id}", file=sys.stderr)
+            print(f"No indexed session with id {args.session_id}", file=sys.stderr)
         return 1
     if args.print_command or args.tmux_pane:
         try:

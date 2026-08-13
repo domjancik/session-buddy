@@ -328,3 +328,179 @@ def scan_codex_sessions(codex_home: Path) -> list[Path]:
 def safe_stat_key(path: Path) -> tuple[int, int]:
     stat = os.stat(path)
     return int(stat.st_mtime_ns), int(stat.st_size)
+
+
+OPENCODE_DB_NAME = "opencode.db"
+
+
+def default_opencode_home() -> Path:
+    data_home = os.environ.get("XDG_DATA_HOME")
+    root = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
+    return root / "opencode"
+
+
+def opencode_db_path(opencode_home: Path) -> Path:
+    return opencode_home / OPENCODE_DB_NAME
+
+
+def opencode_source_path(db_path: Path, session_id: str) -> str:
+    """Identity for a session inside a shared database.
+
+    Claude and Codex give each session its own file, so source_path is that file. opencode
+    keeps every session in one SQLite database, so we synthesise a per-session key. It is
+    never opened as a file: freshness stats the database and compares a per-session
+    fingerprint, otherwise one write would mark every opencode session stale.
+    """
+    return f"{db_path}#{session_id}"
+
+
+def opencode_stat_key(row: dict[str, Any]) -> tuple[int, int]:
+    """Per-session change key, standing in for (mtime, size) of a private file.
+
+    Every opencode session shares one database, so its mtime moves whenever *any* session
+    is written. Keying on the session's own time_updated keeps unrelated sessions skippable.
+    """
+    return to_int(row.get("time_updated")) or 0, to_int(row.get("time_created")) or 0
+
+
+def opencode_metadata_fingerprint(row: dict[str, Any]) -> str:
+    return json.dumps(
+        {
+            "time_updated": row.get("time_updated"),
+            "title": row.get("title"),
+            "directory": row.get("directory"),
+            "archived": row.get("time_archived"),
+        },
+        sort_keys=True,
+    )
+
+
+def connect_readonly(db_path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def scan_opencode_sessions(opencode_home: Path) -> list[dict[str, Any]]:
+    db_path = opencode_db_path(opencode_home)
+    if not db_path.is_file():
+        return []
+    try:
+        conn = connect_readonly(db_path)
+    except sqlite3.Error:
+        return []
+    try:
+        rows = conn.execute(
+            """
+            select id, parent_id, slug, directory, title, time_created, time_updated,
+                   time_archived, agent, model
+            from session
+            order by time_updated desc
+            """
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def parse_opencode_session(db_path: Path, row: dict[str, Any]) -> SessionRecord | None:
+    session_id = str(row.get("id") or "")
+    if not session_id:
+        return None
+    try:
+        conn = connect_readonly(db_path)
+    except sqlite3.Error:
+        return None
+    try:
+        message_rows = conn.execute(
+            "select id, data, time_created from message where session_id = ? order by time_created, id",
+            (session_id,),
+        ).fetchall()
+        part_rows = conn.execute(
+            "select message_id, data, time_created from part where session_id = ? order by time_created, id",
+            (session_id,),
+        ).fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+    parts_by_message: dict[str, list[str]] = {}
+    for part in part_rows:
+        text = opencode_part_text(part["data"])
+        if text:
+            parts_by_message.setdefault(str(part["message_id"]), []).append(text)
+
+    messages: list[MessageRecord] = []
+    for message in message_rows:
+        text = "\n".join(parts_by_message.get(str(message["id"]), []))
+        if not text.strip():
+            continue
+        messages.append(
+            MessageRecord(
+                provider="opencode",
+                session_id=session_id,
+                idx=len(messages),
+                role=opencode_role(message["data"]),
+                timestamp=to_int(message["time_created"]),
+                text=collapse_ws(text),
+            )
+        )
+
+    first_prompt = next((m.text for m in messages if m.role == "user"), "")
+    title = clean_title(str(row.get("title") or "")) or truncate(first_prompt, 120)
+    mtime, size = opencode_stat_key(row)
+    return SessionRecord(
+        provider="opencode",
+        session_id=session_id,
+        title=title,
+        cwd=str(row.get("directory") or ""),
+        created_at=to_int(row.get("time_created")),
+        updated_at=to_int(row.get("time_updated")),
+        git_branch="",
+        source_path=opencode_source_path(db_path, session_id),
+        file_mtime=mtime,
+        file_size=size,
+        message_count=len(messages),
+        first_prompt=truncate(first_prompt, 400),
+        summary="",
+        preview=build_preview(messages, ""),
+        messages=messages,
+    )
+
+
+def opencode_part_text(data: Any) -> str:
+    """Parts hold tool calls, reasoning and text; only text carries searchable content."""
+    payload = load_json(data)
+    if not isinstance(payload, dict):
+        return ""
+    if payload.get("type") != "text":
+        return ""
+    return str(payload.get("text") or "")
+
+
+def opencode_role(data: Any) -> str:
+    payload = load_json(data)
+    if isinstance(payload, dict):
+        return str(payload.get("role") or "unknown")
+    return "unknown"
+
+
+def load_json(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", "replace")
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return None
+
+
+def to_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

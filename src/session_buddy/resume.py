@@ -48,6 +48,9 @@ def build_resume_command(provider: str, session_id: str, cwd: str, git_branch: s
         argv.append(session_id)
     elif provider == "claude":
         argv = ["claude", "--resume", session_id]
+    elif provider == "opencode":
+        # `opencode --session <id>` (alias -s), started in the session's directory.
+        argv = ["opencode", "--session", session_id]
     else:
         raise ValueError(f"Unsupported provider: {provider}")
     return ResumeCommand(provider, session_id, cwd, argv, git_branch)

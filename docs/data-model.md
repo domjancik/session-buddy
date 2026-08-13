@@ -12,13 +12,13 @@ A tool relates to a session in exactly one of two ways. This is the central dist
 | **Provider** | the transcript | session rows | `parsers.py` |
 | **Annotator** | metadata *about* someone else's session | namespaced key/values | `annotators/` |
 
-**Provider** — the tool wrote the conversation to disk. Claude Code and Codex are providers.
-An opencode parser would be a provider. A provider is the source of truth for a session's
-existence, content, cwd, and timestamps.
+**Provider** — the tool wrote the conversation to disk. Claude Code, Codex and opencode are
+providers. A provider is the source of truth for a session's existence, content, cwd, and
+timestamps.
 
 **Annotator** — the tool orchestrates, groups, or labels sessions that a provider already
-owns. Traycer is an annotator: it runs Claude Code and Codex underneath and records which
-*epic* each session belongs to. An annotator never creates a session row.
+owns. Traycer is an annotator: it runs the providers underneath and records which *epic* each
+session belongs to. An annotator never creates a session row.
 
 **A tool can be both.** Omnigent is a meta-harness that orchestrates Claude Code, Codex and
 Cursor *and* can run native agents. If those native agents get their own transcripts, Omnigent
@@ -101,6 +101,21 @@ Add `annotators/<tool>.py` exposing `source`, `title_priority`, `detect(home)` a
 Add parsing to `parsers.py` (`scan_*`, `parse_*` returning `SessionRecord`) and call it from
 `index_all`. A provider owns session identity, so its `session_id` must match whatever an
 orchestrator would reference — that identifier is the join key annotators depend on.
+
+### Providers that share one store
+
+Claude and Codex give each session its own file, so `source_path` is that file and freshness
+compares its `(mtime, size)`. opencode keeps every session in one SQLite database, which breaks
+both assumptions:
+
+- **Identity** — `source_path` is synthesised as `<db>#<session_id>`. It is never opened as a
+  file; it only has to be unique per session.
+- **Change detection** — the database's mtime moves whenever *any* session is written, so
+  stat'ing it marks every session stale on every write. Pass `stat_key=` to `should_skip` and
+  `update_freshness_for_path` with a per-session value instead (opencode uses
+  `(time_updated, time_created)`).
+
+Any future provider backed by a shared database or a server should follow the same two rules.
 
 ## Reference: the Traycer annotator
 

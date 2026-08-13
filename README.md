@@ -8,6 +8,7 @@ Local full-text, fuzzy, and semantic search over your coding-agent session histo
 | --- | --- | --- | --- |
 | Claude Code | provider — owns transcripts | `~/.claude/projects` | built in |
 | Codex | provider — owns transcripts | `~/.codex/sessions`, `state_5.sqlite`, `session_index.jsonl` | built in |
+| opencode | provider — owns transcripts | `~/.local/share/opencode/opencode.db` | built in |
 | Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics` | `[traycer]` extra |
 
 A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
@@ -77,6 +78,7 @@ By default this scans:
 - `~/.codex/sessions`
 - `~/.codex/state_5.sqlite`
 - `~/.codex/session_index.jsonl`
+- `~/.local/share/opencode/opencode.db` (honours `$XDG_DATA_HOME`; override with `--opencode-home`)
 
 The index is stored at `~/.session-buddy/index.sqlite`, so every directory shares one index.
 Override with `--db <path>` or the `SESSION_BUDDY_DB` environment variable.
@@ -200,6 +202,7 @@ sb resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-pane
 
 Codex resumes with `codex resume -C <cwd> <session_id>`.
 Claude resumes with `claude --resume <session_id>` from the indexed session folder.
+opencode resumes with `opencode --session <session_id>` from the session's directory.
 If an indexed Codex folder no longer exists, resume falls back to the current directory and prints a warning.
 If an indexed Claude folder no longer exists, resume prints a restore command when the missing path is under a repo `.worktrees` folder, for example:
 
