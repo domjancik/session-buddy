@@ -1,6 +1,7 @@
-# Session Buddy
-
-Local full-text, fuzzy, and semantic search over your coding-agent session history.
+<p align="center">
+  <img src="docs/header.png" width="900"
+       alt="Session Buddy — local full-text, fuzzy, and semantic search over your coding-agent session history">
+</p>
 
 ## What It Looks Like
 
@@ -31,10 +32,13 @@ $ sb "retry budget on a dead endpoint" --limit 2 --show-ext
 
 ```console
 $ sb groups
-traycer  a1b2c3d4    3 agents  Payments Integration Analysis
-traycer  b7e4f091    1 agents  Webhook Delivery Hardening
-traycer  c93a1d55    0 agents  Public API Docs Refresh
+traycer  a1b2c3d4    3 sessions  Payments Integration Analysis
+traycer  b7e4f091    1 sessions  Webhook Delivery Hardening
+traycer  c93a1d55    0 sessions  Public API Docs Refresh
 ```
+
+The count is sessions present in *this* index, so it reflects what a search can actually
+reach — a group whose sessions were never indexed reads 0.
 
 The TUI adds a preview pane and resume shortcuts:
 
@@ -185,7 +189,7 @@ in the index: an orchestrated session whose transcript opens with machine chatte
 sb "retry backoff" --show-ext              # show annotator metadata under each hit
 sb "retry backoff" --ext traycer.epic_title=Payments   # scope to one epic
 sb "migration" --ext traycer                  # only sessions Traycer orchestrated
-sb groups                                     # list epics: id, agent count, title
+sb groups                                     # list epics: id, session count, title
 ```
 
 Without the extra installed, or with no such tool on the machine, everything above is simply

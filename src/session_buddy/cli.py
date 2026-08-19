@@ -242,26 +242,22 @@ def cmd_tui(args: argparse.Namespace) -> int:
 
 
 def cmd_groups(args: argparse.Namespace) -> int:
-    from .annotators import ANNOTATORS
-
-    rows = []
-    for annotator in ANNOTATORS:
-        if args.source and annotator.source != args.source:
-            continue
-        if not annotator.detect():
-            continue
-        result = annotator.collect()
-        if result.warning:
-            print(f"Warning: {result.warning}", file=sys.stderr)
-        for group in result.groups:
-            rows.append((annotator.source, group))
-    if not rows:
-        print("No annotator groups found.", file=sys.stderr)
+    db = IndexDatabase(args.db)
+    try:
+        groups = db.list_groups(args.source)
+    finally:
+        db.close()
+    if not groups:
+        print(
+            "No annotator groups in this index. Run `index` with an orchestrator present.",
+            file=sys.stderr,
+        )
         return 1
-    rows.sort(key=lambda r: -int(r[1].get("updated_at") or 0))
-    for source, group in rows:
-        agents = group.get("agents", "0")
-        print(f"{source}  {group.get('id', '')[:8]}  {agents:>3} agents  {group.get('title') or '(untitled)'}")
+    for group in groups:
+        print(
+            f"{group['source']}  {group['id'][:8]}  {group['sessions']:>3} sessions  "
+            f"{group['title'] or '(untitled)'}"
+        )
     return 0
 
 

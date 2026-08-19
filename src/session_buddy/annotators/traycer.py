@@ -82,7 +82,8 @@ class TraycerAnnotator:
                     "id": record["id"],
                     "title": record["title"],
                     "updated_at": str(record["updated_at"]),
-                    "agents": str(len(record["bindings"])),
+                    "sessions": str(len(record["bindings"])),
+                    "key": "epic_id",  # the annotation key whose value is this group's id
                 }
             )
             for binding in record["bindings"]:

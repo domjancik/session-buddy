@@ -66,6 +66,19 @@ does not depend on registration order. Resolution runs as one pass over all clai
 resets every session to `provider_title` — so when an annotator stops claiming a title (epic
 deleted, tool uninstalled) the session reverts instead of keeping a stale name.
 
+### Groups
+
+An annotator also reports its containers (Traycer epics, and whatever a later tool calls
+them) via `AnnotatorResult.groups`. They are stored in `annotation_groups` at index time and
+read back by `sb groups`, so the command honours `--db` like every other subcommand and works
+with the orchestrator absent.
+
+Each group names the annotation key that points back at it (`member_key`, `epic_id` for
+Traycer), which is what lets the count be derived generically: the number of *indexed*
+sessions carrying that key/value. That is deliberately not the annotator's own tally — the
+count should describe what a search can reach, so a group whose sessions were never indexed
+reads 0.
+
 ### Annotation lifecycle
 
 `replace_annotations(source, …)` is wholesale per source: a source's rows are deleted and

@@ -97,7 +97,9 @@ def test_groups_are_reported_for_listing(tmp_path):
 
     groups = TraycerAnnotator().collect(tmp_path).groups
 
-    assert groups == [{"id": "epic-1", "title": "Alpha", "updated_at": "1700000000000", "agents": "1"}]
+    assert groups == [
+        {"id": "epic-1", "title": "Alpha", "updated_at": "1700000000000", "sessions": "1", "key": "epic_id"}
+    ]
 
 
 def test_a_corrupt_seed_does_not_lose_the_other_epics(tmp_path):
@@ -191,7 +193,7 @@ def test_agents_and_chats_both_counted_in_groups(tmp_path):
 
     result = TraycerAnnotator().collect(tmp_path)
 
-    assert result.groups[0]["agents"] == "2"
+    assert result.groups[0]["sessions"] == "2"
     assert {a.session_id for a in result.annotations} == {
         "session-1",
         "019f0000-0000-7000-8000-000000000001",

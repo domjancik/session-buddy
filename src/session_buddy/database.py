@@ -94,6 +94,15 @@ class IndexDatabase:
                 primary key (provider, session_id, source, key)
             );
 
+            create table if not exists annotation_groups (
+                source text not null,
+                group_id text not null,
+                title text not null,
+                updated_at integer not null default 0,
+                member_key text not null default '',
+                primary key (source, group_id)
+            );
+
             create table if not exists source_state (
                 source_path text primary key,
                 provider text not null,
@@ -199,6 +208,64 @@ class IndexDatabase:
                     )
                     applied += cur.rowcount
         return applied
+
+    def replace_groups(self, source: str, groups: list[dict[str, str]]) -> int:
+        """Persist an annotator's containers so `groups` reads the index, not the live store."""
+        with self.conn:
+            self.conn.execute("delete from annotation_groups where source = ?", (source,))
+            self.conn.executemany(
+                "insert or replace into annotation_groups (source, group_id, title, updated_at, member_key) values (?, ?, ?, ?, ?)",
+                [
+                    (
+                        source,
+                        str(group.get("id") or ""),
+                        str(group.get("title") or ""),
+                        int(group.get("updated_at") or 0),
+                        str(group.get("key") or ""),
+                    )
+                    for group in groups
+                    if group.get("id")
+                ],
+            )
+        return len(groups)
+
+    def list_groups(self, source: str | None = None) -> list[dict[str, object]]:
+        """Groups with the number of sessions actually present in this index.
+
+        The count comes from the annotations rather than the annotator's own tally, so it
+        reflects what a search can reach: a group whose sessions were never indexed reads 0.
+        """
+        params: list[str] = []
+        where = ""
+        if source:
+            where = "where g.source = ?"
+            params.append(source)
+        rows = self.conn.execute(
+            f"""
+            select g.source, g.group_id, g.title, g.updated_at,
+                   (
+                       select count(distinct a.provider || ':' || a.session_id)
+                       from annotations a
+                       where a.source = g.source
+                         and a.key = g.member_key
+                         and a.value = g.group_id
+                   ) as sessions
+            from annotation_groups g
+            {where}
+            order by g.updated_at desc, g.title
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "source": row["source"],
+                "id": row["group_id"],
+                "title": row["title"],
+                "updated_at": int(row["updated_at"] or 0),
+                "sessions": int(row["sessions"] or 0),
+            }
+            for row in rows
+        ]
 
     def annotation_sources(self) -> list[str]:
         return [row[0] for row in self.conn.execute("select distinct source from annotations order by source")]

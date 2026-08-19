@@ -181,6 +181,7 @@ def run_annotators(db: IndexDatabase, stats: IndexStats, annotators=None) -> Non
         if not result.annotations and not result.titles:
             continue
         stats.annotated += db.replace_annotations(annotator.source, result.annotations)
+        db.replace_groups(annotator.source, result.groups)
         stats.annotation_sources.append(annotator.source)
         titles.extend(result.titles)
     # Applied in one pass so priority resolution sees every claim at once, and so a

@@ -168,3 +168,50 @@ def test_ext_filter_by_source_only(db):
 )
 def test_parse_ext_filter(expr, expected):
     assert parse_ext_filter(expr) == expected
+
+
+def test_groups_are_read_from_the_index(db):
+    make_session(db, "claude", "s2", "second session")
+    db.replace_annotations(
+        "traycer",
+        [
+            Annotation("claude", "s1", "traycer", "epic_id", "e1"),
+            Annotation("claude", "s2", "traycer", "epic_id", "e1"),
+        ],
+    )
+    db.replace_groups("traycer", [{"id": "e1", "title": "Alpha Epic", "updated_at": "5", "key": "epic_id"}])
+
+    groups = db.list_groups()
+
+    assert groups == [
+        {"source": "traycer", "id": "e1", "title": "Alpha Epic", "updated_at": 5, "sessions": 2}
+    ]
+
+
+def test_group_count_reflects_indexed_sessions_only(db):
+    """A group whose sessions were never indexed reads 0 — the count is what search can reach."""
+    db.replace_annotations("traycer", [])
+    db.replace_groups("traycer", [{"id": "e9", "title": "Empty", "updated_at": "1", "key": "epic_id"}])
+
+    assert db.list_groups()[0]["sessions"] == 0
+
+
+def test_groups_sort_newest_first_and_filter_by_source(db):
+    db.replace_groups(
+        "traycer",
+        [
+            {"id": "old", "title": "Older", "updated_at": "1", "key": "epic_id"},
+            {"id": "new", "title": "Newer", "updated_at": "9", "key": "epic_id"},
+        ],
+    )
+    db.replace_groups("omnigent", [{"id": "sw", "title": "Swarm", "updated_at": "5", "key": "swarm_id"}])
+
+    assert [g["title"] for g in db.list_groups()] == ["Newer", "Swarm", "Older"]
+    assert [g["title"] for g in db.list_groups("omnigent")] == ["Swarm"]
+
+
+def test_replacing_groups_drops_the_previous_set(db):
+    db.replace_groups("traycer", [{"id": "gone", "title": "Gone", "updated_at": "1", "key": "epic_id"}])
+    db.replace_groups("traycer", [{"id": "kept", "title": "Kept", "updated_at": "2", "key": "epic_id"}])
+
+    assert [g["id"] for g in db.list_groups()] == ["kept"]
