@@ -2,6 +2,52 @@
 
 Local full-text, fuzzy, and semantic search over your coding-agent session history.
 
+## What It Looks Like
+
+Search prints ranked hits with inline matched excerpts, so the answer is usually visible
+without opening a transcript:
+
+```console
+$ sb "retry budget on a dead endpoint" --limit 2 --show-ext
+ 1. claude 0.650 2026-02-13 11:38 ACME-142 retry backoff gate
+    cwd: /Users/dev/acme-mono
+    id: 7c1f9a30-1111-4a00-9c00-0000000000a1
+    branch: acme-142-retry-backoff
+    updated: 2026-02-13 11:38 UTC
+    traycer: agent_title=ACME-142 retry backoff gate epic_id=a1b2c3d4-0000-4000-8000-00000000ab01 epic_title=Payments Integration Analysis kind=agent workspace=/Users/dev/acme-mono
+    match: gate delivery [on] the [retry] [budget] so [a] [dead] [endpoint] stops burning [attempts]
+    match: gate delivery [on] the [retry] [budget] so [a] [dead] [endpoint] stops burning [attempts] [Added] isRetryBudgetAvailable to the delivery...
+
+ 2. codex  0.125 2026-02-12 14:02 PR 128 Alignment Review
+    cwd: /Users/dev/acme-mono
+    id: 019f0000-0000-7000-8000-000000000001
+    branch: main
+    updated: 2026-02-12 14:02 UTC
+    traycer: chat_title=PR 128 Alignment Review epic_id=a1b2c3d4-0000-4000-8000-00000000ab01 epic_title=Payments Integration Analysis kind=chat workspace=/Users/dev/acme-mono
+    match: review PR 128 (main...retry-backoff) for alignment with the delivery contract One defect: the backoff timestamp is recorded before the attempt, so a crash mid-attempt loses the retry.
+```
+
+`sb groups` lists what an orchestrator has grouped, newest first:
+
+```console
+$ sb groups
+traycer  a1b2c3d4    3 agents  Payments Integration Analysis
+traycer  b7e4f091    1 agents  Webhook Delivery Hardening
+traycer  c93a1d55    0 agents  Public API Docs Refresh
+```
+
+The TUI adds a preview pane and resume shortcuts:
+
+![Session Buddy TUI](docs/tui.svg)
+
+Both are real output, captured from a throwaway index of invented sessions. Reproduce it:
+
+```sh
+uv run python scripts/demo_index.py /tmp/sb-demo.sqlite
+sb --db /tmp/sb-demo.sqlite "retry budget on a dead endpoint" --show-ext
+uv run python scripts/screenshot.py /tmp/sb-demo.sqlite docs/tui.svg
+```
+
 ## Supported Tools
 
 | Tool | Role | Reads | Needs |
