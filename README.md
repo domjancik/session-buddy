@@ -44,14 +44,6 @@ The TUI adds a preview pane and resume shortcuts:
 
 ![Session Buddy TUI](docs/tui.svg)
 
-Both are real output, captured from a throwaway index of invented sessions. Reproduce it:
-
-```sh
-uv run python scripts/demo_index.py /tmp/sb-demo.sqlite
-sb --db /tmp/sb-demo.sqlite "retry budget on a dead endpoint" --show-ext
-uv run python scripts/screenshot.py /tmp/sb-demo.sqlite docs/tui.svg
-```
-
 ## Supported Tools
 
 | Tool | Role | Reads | Needs |
