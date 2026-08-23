@@ -51,6 +51,7 @@ The TUI adds a preview pane and resume shortcuts:
 | Claude Code | provider — owns transcripts | `~/.claude/projects` | built in |
 | Codex | provider — owns transcripts | `~/.codex/sessions`, `state_5.sqlite`, `session_index.jsonl` | built in |
 | opencode | provider — owns transcripts | `~/.local/share/opencode/opencode.db` | built in |
+| pi | provider — owns transcripts | `~/.pi/agent/sessions`, `~/.pi/profiles/*/sessions` | built in |
 | Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics` | `[traycer]` extra |
 
 A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
@@ -88,8 +89,8 @@ Without the semantic extra, the tool still provides local semantic-style matchin
 ## Agent Skill
 
 `skills/session-buddy/` is a skill so coding agents reach for this tool instead of hand-rolling a
-grep over the raw transcript directories. The same directory works for both harnesses — Claude
-Code and Codex use the same `SKILL.md` format.
+grep over the raw transcript directories. One directory serves every harness — they all read the
+same `SKILL.md` format.
 
 ```sh
 git clone https://github.com/domjancik/session-buddy
@@ -100,13 +101,17 @@ ln -s "$PWD/skills/session-buddy" ~/.claude/skills/session-buddy
 
 # Codex (honours $CODEX_HOME, defaults to ~/.codex)
 mkdir -p ~/.codex/skills && ln -s "$PWD/skills/session-buddy" ~/.codex/skills/session-buddy
+
+# pi (per profile; or pass --skill <path> for a one-off)
+mkdir -p ~/.pi/profiles/<profile>/skills \
+  && ln -s "$PWD/skills/session-buddy" ~/.pi/profiles/<profile>/skills/session-buddy
 ```
 
 Agents then pick it up on prompts like "find the session that reviewed PR 1234" or "did we
 already investigate this?". Symlinking keeps it current with `git pull`.
 
-**Restart your agent after linking** — both harnesses load skills at session start, so a session
-already running will not see it.
+**Restart your agent after linking** — skills load at session start, so a session already
+running will not see it.
 
 ## Index Sessions
 
@@ -121,6 +126,7 @@ By default this scans:
 - `~/.codex/state_5.sqlite`
 - `~/.codex/session_index.jsonl`
 - `~/.local/share/opencode/opencode.db` (honours `$XDG_DATA_HOME`; override with `--opencode-home`)
+- `~/.pi/agent/sessions` and `~/.pi/profiles/*/sessions` (override with `--pi-home`)
 
 The index is stored at `~/.session-buddy/index.sqlite`, so every directory shares one index.
 Override with `--db <path>` or the `SESSION_BUDDY_DB` environment variable.
@@ -245,6 +251,8 @@ sb resume claude 8a4837df-fda2-4e32-b612-2dacc03d8698 --tmux-pane
 Codex resumes with `codex resume -C <cwd> <session_id>`.
 Claude resumes with `claude --resume <session_id>` from the indexed session folder.
 opencode resumes with `opencode --session <session_id>` from the session's directory.
+pi resumes with `pi --session <transcript path>` — the path, because `--session` also accepts a
+partial uuid and those can collide.
 If an indexed Codex folder no longer exists, resume falls back to the current directory and prints a warning.
 If an indexed Claude folder no longer exists, resume prints a restore command when the missing path is under a repo `.worktrees` folder, for example:
 

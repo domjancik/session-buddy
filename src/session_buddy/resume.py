@@ -40,7 +40,9 @@ class PreparedResumeCommand:
         return prefix + " ".join(shlex.quote(part) for part in self.argv)
 
 
-def build_resume_command(provider: str, session_id: str, cwd: str, git_branch: str = "") -> ResumeCommand:
+def build_resume_command(
+    provider: str, session_id: str, cwd: str, git_branch: str = "", source_path: str = ""
+) -> ResumeCommand:
     if provider == "codex":
         argv = ["codex", "resume"]
         if cwd:
@@ -51,6 +53,9 @@ def build_resume_command(provider: str, session_id: str, cwd: str, git_branch: s
     elif provider == "opencode":
         # `opencode --session <id>` (alias -s), started in the session's directory.
         argv = ["opencode", "--session", session_id]
+    elif provider == "pi":
+        # `pi --session` takes a path or a *partial* uuid; the path cannot be ambiguous.
+        argv = ["pi", "--session", source_path or session_id]
     else:
         raise ValueError(f"Unsupported provider: {provider}")
     return ResumeCommand(provider, session_id, cwd, argv, git_branch)
@@ -63,7 +68,13 @@ def load_resume_command(db_path: Path, provider: str, session_id: str, cwd_overr
         if row is None:
             raise KeyError(f"No indexed {provider} session with id {session_id}")
         cwd = cwd_override if cwd_override is not None else str(row["cwd"] or "")
-        return build_resume_command(provider, session_id, cwd, str(row["git_branch"] or ""))
+        return build_resume_command(
+            provider,
+            session_id,
+            cwd,
+            str(row["git_branch"] or ""),
+            str(row["source_path"] or ""),
+        )
     finally:
         db.close()
 

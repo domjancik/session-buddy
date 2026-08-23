@@ -12,8 +12,8 @@ A tool relates to a session in exactly one of two ways. This is the central dist
 | **Provider** | the transcript | session rows | `parsers.py` |
 | **Annotator** | metadata *about* someone else's session | namespaced key/values | `annotators/` |
 
-**Provider** — the tool wrote the conversation to disk. Claude Code, Codex and opencode are
-providers. A provider is the source of truth for a session's existence, content, cwd, and
+**Provider** — the tool wrote the conversation to disk. Claude Code, Codex, opencode and pi
+are providers. A provider is the source of truth for a session's existence, content, cwd, and
 timestamps.
 
 **Annotator** — the tool orchestrates, groups, or labels sessions that a provider already
@@ -129,6 +129,19 @@ both assumptions:
   `(time_updated, time_created)`).
 
 Any future provider backed by a shared database or a server should follow the same two rules.
+
+### Harness-injected text
+
+A provider's transcript is not all conversation. pi prepends the full text of any loaded
+`SKILL.md` to the user's turn, so left alone it becomes the title, fills the preview, and makes
+every skill-using session look alike. `strip_pi_injections` removes those blocks from the
+indexed text — not just from the title — because a skill document is not something anyone
+searches their own history for. Claude's `<task-notification>` openers are the same phenomenon;
+there the fix is an annotator title rather than stripping, since the notification *is* the
+turn.
+
+A session left with no text after stripping is not indexed at all: an empty row can never
+match, so it is noise rather than a record.
 
 ## Reference: the Traycer annotator
 

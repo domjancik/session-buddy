@@ -127,7 +127,8 @@ def test_change_key_tracks_the_session_not_the_database(tmp_path):
     )
     db = IndexDatabase(tmp_path / "index.sqlite")
     index_all(db_path=tmp_path / "index.sqlite", claude_home=tmp_path / "none",
-              codex_home=tmp_path / "none", opencode_home=home, semantic=False)
+              codex_home=tmp_path / "none", opencode_home=home, pi_home=tmp_path / "none",
+              semantic=False)
     db.close()
     db = IndexDatabase(tmp_path / "index.sqlite")
 
@@ -164,12 +165,12 @@ def test_index_and_freshness_round_trip(tmp_path):
     empty = tmp_path / "none"
 
     stats = index_all(db_path=index_path, claude_home=empty, codex_home=empty,
-                      opencode_home=home, semantic=False)
+                      opencode_home=home, pi_home=empty, semantic=False)
     assert stats.indexed == 1
 
     db = IndexDatabase(index_path)
     try:
-        fresh = check_index_freshness_db(db, empty, empty, home)
+        fresh = check_index_freshness_db(db, empty, empty, home, empty)
         assert fresh.stale is False
         assert fresh.unchanged == 1
     finally:

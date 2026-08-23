@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -504,3 +505,137 @@ def to_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+PI_SESSION_GLOBS = ("agent/sessions/*/*.jsonl", "profiles/*/sessions/*/*.jsonl")
+
+
+def default_pi_home() -> Path:
+    return Path.home() / ".pi"
+
+
+def scan_pi_sessions(pi_home: Path) -> list[Path]:
+    """pi writes one JSONL per session, under the default agent and under each profile."""
+    if not pi_home.is_dir():
+        return []
+    paths: list[Path] = []
+    for pattern in PI_SESSION_GLOBS:
+        paths.extend(sorted(pi_home.glob(pattern)))
+    return paths
+
+
+def parse_pi_session(path: Path) -> SessionRecord | None:
+    """Parse a pi transcript.
+
+    Records are one JSON object per line, tagged by `type`:
+      session                 - header: id, version, timestamp, cwd
+      message                 - {id, parentId, timestamp, message: {role, content, timestamp}}
+      model_change /
+      thinking_level_change   - settings events, no conversation content
+
+    `message.role` is user, assistant, or toolResult, and `content` is a block list of
+    `text`, `thinking`, and `toolCall`. Only `text` carries searchable prose: thinking holds
+    reasoning plus an encrypted signature blob, and toolCall holds arguments.
+    """
+    header: dict[str, Any] = {}
+    messages: list[MessageRecord] = []
+    session_id = ""
+
+    for record in stream_jsonl(path):
+        kind = record.get("type")
+        if kind == "session":
+            header = record
+            session_id = str(record.get("id") or "")
+            continue
+        if kind != "message":
+            continue
+        payload = record.get("message") or {}
+        text = pi_message_text(payload.get("content"))
+        if not text.strip():
+            continue
+        messages.append(
+            MessageRecord(
+                provider="pi",
+                session_id=session_id,
+                idx=len(messages),
+                role=str(payload.get("role") or "unknown"),
+                timestamp=parse_timestamp(record.get("timestamp")),
+                text=collapse_ws(text),
+            )
+        )
+
+    if not messages:
+        # Header-only or unreadable: nothing to search, so keep it out of the index
+        # rather than adding an empty row that can never match.
+        return None
+    if not session_id:
+        session_id = infer_pi_id_from_filename(path.name)
+    if not session_id:
+        return None
+    for message in messages:
+        message.session_id = session_id
+
+    cwd = str(header.get("cwd") or "") or infer_cwd_from_pi_dir(path.parent.name)
+    first_prompt = next((m.text for m in messages if m.role == "user"), "")
+    created_at = parse_timestamp(header.get("timestamp"))
+    updated_at = messages[-1].timestamp if messages else created_at
+    mtime, size = safe_stat_key(path)
+    return SessionRecord(
+        provider="pi",
+        session_id=session_id,
+        title=truncate(first_prompt, 120),
+        cwd=cwd,
+        created_at=created_at,
+        updated_at=updated_at or created_at,
+        git_branch="",
+        source_path=str(path),
+        file_mtime=mtime,
+        file_size=size,
+        message_count=len(messages),
+        first_prompt=truncate(first_prompt, 400),
+        summary="",
+        preview=build_preview(messages, ""),
+        messages=messages,
+    )
+
+
+PI_SKILL_INJECTION = re.compile(r"<skill\b[^>]*>.*?</skill>", re.S)
+
+
+def pi_message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return strip_pi_injections(content)
+    parts: list[str] = []
+    for block in content or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(str(block.get("text") or ""))
+    return strip_pi_injections("\n".join(parts))
+
+
+def strip_pi_injections(text: str) -> str:
+    """Drop skill documents pi prepends to a user turn.
+
+    pi injects the whole SKILL.md into the user message, then appends what the user actually
+    typed. Left in, it becomes the session title and the preview, and every session that
+    loaded a skill looks alike. The document is not conversation, so it is dropped from the
+    indexed text rather than merely hidden from the title.
+    """
+    return PI_SKILL_INJECTION.sub("", text).strip()
+
+
+def infer_pi_id_from_filename(filename: str) -> str:
+    """`2026-08-23T13-11-05-050Z_01a02ebf-...jsonl` -> the uuid after the underscore."""
+    stem = filename[:-6] if filename.endswith(".jsonl") else filename
+    _, _, tail = stem.partition("_")
+    return tail or stem
+
+
+def infer_cwd_from_pi_dir(dirname: str) -> str:
+    """`--Users-dominikj-dev-oss-session-buddy--` -> a best-effort path.
+
+    Lossy: pi encodes both separators and literal dashes as `-`, so a directory whose name
+    contains a dash is indistinguishable from a path separator. Only used when the session
+    header has no cwd, which should not happen for v3 transcripts.
+    """
+    trimmed = dirname.strip("-")
+    return "/" + trimmed.replace("-", "/") if trimmed else ""

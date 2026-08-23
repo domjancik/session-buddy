@@ -10,6 +10,7 @@ from .database import IndexDatabase
 from .embeddings import Embedder
 from .parsers import (
     default_opencode_home,
+    default_pi_home,
     infer_codex_id_from_filename,
     load_claude_indexes,
     load_codex_session_index,
@@ -21,10 +22,12 @@ from .parsers import (
     parse_claude_session,
     parse_codex_session,
     parse_opencode_session,
+    parse_pi_session,
     safe_stat_key,
     scan_claude_sessions,
     scan_codex_sessions,
     scan_opencode_sessions,
+    scan_pi_sessions,
 )
 
 
@@ -72,6 +75,7 @@ def index_all(
     claude_home: Path,
     codex_home: Path,
     opencode_home: Path | None = None,
+    pi_home: Path | None = None,
     force: bool = False,
     prune: bool = False,
     semantic: bool = True,
@@ -79,6 +83,7 @@ def index_all(
     semantic_model: str = "BAAI/bge-small-en-v1.5",
 ) -> IndexStats:
     opencode_home = opencode_home or default_opencode_home()
+    pi_home = pi_home or default_pi_home()
     db = IndexDatabase(db_path)
     embedder = Embedder(semantic_backend, semantic_model) if semantic else None
     stats = IndexStats(embed_backend=embedder.backend if embedder else "disabled")
@@ -154,6 +159,21 @@ def index_all(
         except Exception:
             stats.failed += 1
 
+    for path in scan_pi_sessions(pi_home):
+        seen_paths.add(str(path))
+        if should_skip(db, path, force, ""):
+            stats.skipped += 1
+            continue
+        try:
+            record = parse_pi_session(path)
+            if record is None:
+                stats.failed += 1
+                continue
+            db.upsert_session(record, embedder)
+            stats.indexed += 1
+        except Exception:
+            stats.failed += 1
+
     stats.total_seen = len(seen_paths)
     stats.pruned = db.mark_seen_sources(seen_paths, prune=prune)
     run_annotators(db, stats)
@@ -190,19 +210,28 @@ def run_annotators(db: IndexDatabase, stats: IndexStats, annotators=None) -> Non
 
 
 def check_index_freshness(
-    db_path: Path, claude_home: Path, codex_home: Path, opencode_home: Path | None = None
+    db_path: Path,
+    claude_home: Path,
+    codex_home: Path,
+    opencode_home: Path | None = None,
+    pi_home: Path | None = None,
 ) -> FreshnessStats:
     db = IndexDatabase(db_path)
     try:
-        return check_index_freshness_db(db, claude_home, codex_home, opencode_home)
+        return check_index_freshness_db(db, claude_home, codex_home, opencode_home, pi_home)
     finally:
         db.close()
 
 
 def check_index_freshness_db(
-    db: IndexDatabase, claude_home: Path, codex_home: Path, opencode_home: Path | None = None
+    db: IndexDatabase,
+    claude_home: Path,
+    codex_home: Path,
+    opencode_home: Path | None = None,
+    pi_home: Path | None = None,
 ) -> FreshnessStats:
     opencode_home = opencode_home or default_opencode_home()
+    pi_home = pi_home or default_pi_home()
     stats = FreshnessStats()
     seen_paths: set[str] = set()
 
@@ -229,6 +258,10 @@ def check_index_freshness_db(
         update_freshness_for_path(
             stats, db, identity, opencode_metadata_fingerprint(row), stat_key=opencode_stat_key(row)
         )
+
+    for path in scan_pi_sessions(pi_home):
+        seen_paths.add(str(path))
+        update_freshness_for_path(stats, db, path, "")
 
     for state in db.source_states():
         if state.source_path not in seen_paths:
