@@ -76,6 +76,7 @@ def index_all(
     codex_home: Path,
     opencode_home: Path | None = None,
     pi_home: Path | None = None,
+    annotators: list | None = None,
     force: bool = False,
     prune: bool = False,
     semantic: bool = True,
@@ -176,7 +177,7 @@ def index_all(
 
     stats.total_seen = len(seen_paths)
     stats.pruned = db.mark_seen_sources(seen_paths, prune=prune)
-    run_annotators(db, stats)
+    run_annotators(db, stats, annotators)
     db.close()
     return stats
 

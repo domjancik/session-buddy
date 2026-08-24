@@ -142,7 +142,7 @@ def test_index_and_freshness_round_trip(tmp_path):
     empty = tmp_path / "none"
 
     stats = index_all(db_path=index_path, claude_home=empty, codex_home=empty,
-                      opencode_home=empty, pi_home=home, semantic=False)
+                      opencode_home=empty, pi_home=home, semantic=False, annotators=[])
     assert stats.indexed == 2
 
     db = IndexDatabase(index_path)

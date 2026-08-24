@@ -16,8 +16,15 @@ ideas that would lose meaning if flattened into one column.
 from __future__ import annotations
 
 from .base import Annotator, AnnotatorResult
+from .conductor import ConductorAnnotator
 from .traycer import TraycerAnnotator
 
-ANNOTATORS: list[Annotator] = [TraycerAnnotator()]
+ANNOTATORS: list[Annotator] = [TraycerAnnotator(), ConductorAnnotator()]
 
-__all__ = ["ANNOTATORS", "Annotator", "AnnotatorResult", "TraycerAnnotator"]
+__all__ = [
+    "ANNOTATORS",
+    "Annotator",
+    "AnnotatorResult",
+    "ConductorAnnotator",
+    "TraycerAnnotator",
+]

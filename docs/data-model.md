@@ -17,8 +17,8 @@ are providers. A provider is the source of truth for a session's existence, cont
 timestamps.
 
 **Annotator** — the tool orchestrates, groups, or labels sessions that a provider already
-owns. Traycer is an annotator: it runs the providers underneath and records which *epic* each
-session belongs to. An annotator never creates a session row.
+owns. Traycer and Conductor are annotators: they run the providers underneath and record which
+*epic* or *workspace* each session belongs to. An annotator never creates a session row.
 
 **A tool can be both.** Omnigent is a meta-harness that orchestrates Claude Code, Codex and
 Cursor *and* can run native agents. If those native agents get their own transcripts, Omnigent
@@ -95,7 +95,11 @@ transcript never drops them, and an annotator never has to read transcripts.
 
 Each annotator is isolated. One that raises contributes nothing and records a warning; it never
 fails the index. Absence of a tool is normal and silent — `detect()` returning `False` is not a
-warning. This matters because most installs will have neither Traycer nor Omnigent present.
+warning. This matters because most installs will have none of these tools present.
+
+Two annotators can claim the same session. Conductor names an individual session ("Review
+repo") while Traycer names the agent that ran it, so Conductor carries the higher
+`title_priority` — the more specific label wins.
 
 ## Adding an annotator
 
@@ -142,6 +146,25 @@ turn.
 
 A session left with no text after stripping is not indexed at all: an empty row can never
 match, so it is noise rather than a record.
+
+## Reference: the Conductor annotator
+
+Conductor (conductor.build) runs Claude Code and Codex in parallel git worktrees. SQLite at
+`~/Library/Application Support/com.conductor.app/conductor.db`:
+
+```sql
+sessions(id, agent_type, claude_session_id, title, workspace_id, …)
+workspaces(id, repository_id, directory_name, workspace_name, branch, workspace_path, …)
+repos(id, name, root_path, …)
+```
+
+`sessions.claude_session_id` is our `session_id` and `agent_type` is our `provider`. The column
+is named for Claude but holds the id whichever harness ran; `agent_type` disambiguates, so
+reading the name literally would drop every Codex session.
+
+Keys written: `workspace_id`, `workspace` (`repo/worktree`), `branch`, `repo`, `workspace_path`,
+`session_title`. Groups are workspaces. `title` defaults to the string `Untitled`, which is a
+placeholder rather than a name and is not claimed.
 
 ## Reference: the Traycer annotator
 

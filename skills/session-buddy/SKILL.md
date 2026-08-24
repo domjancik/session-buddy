@@ -28,9 +28,10 @@ sb "retry backoff PR review" --limit 8
 | `--ext SOURCE[.KEY][=VALUE]` | filter on orchestrator metadata, e.g. `--ext traycer.epic_title=Payments` |
 | `--show-ext` | print that metadata under each hit |
 
-Orchestrators (Traycer today) may annotate sessions they ran. When present, titles come from
+Orchestrators (Traycer and Conductor today) may annotate sessions they ran. When present, titles come from
 the orchestrator rather than the transcript's first line, and `sb groups` lists the epics with
-id, agent count, and title. Use `--ext traycer` to restrict to orchestrated sessions, and
+id, session count, and title. Use `--ext traycer` or `--ext conductor` to restrict to
+orchestrated sessions, `--ext conductor.workspace=<repo/worktree>` to scope to one worktree, and
 `--show-ext` when the user asks which epic or agent a session belonged to. None of this exists
 on a machine without the tool — treat its absence as normal, not as an error.
 

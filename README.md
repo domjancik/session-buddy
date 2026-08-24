@@ -53,6 +53,7 @@ The TUI adds a preview pane and resume shortcuts:
 | opencode | provider — owns transcripts | `~/.local/share/opencode/opencode.db` | built in |
 | pi | provider — owns transcripts | `~/.pi/agent/sessions`, `~/.pi/profiles/*/sessions` | built in |
 | Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics` | `[traycer]` extra |
+| Conductor | annotator — workspace, branch and session names for sessions it runs | `~/Library/Application Support/com.conductor.app/conductor.db` | built in |
 
 A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
 another tool owns — orchestrators and meta-harnesses live here, and a tool can be both. Adding
@@ -166,27 +167,31 @@ The `mkdir` lock keeps two sessions ending at once from writing the index concur
 self-clears if a run dies holding it. `--prune` drops sessions whose transcripts were deleted by
 Claude Code's retention policy; without it they linger in the index forever.
 
-## Orchestrator Metadata (Traycer, and later tools)
+## Orchestrator Metadata (Traycer, Conductor, and later tools)
 
-Tools that *run* agent sessions rather than author them — Traycer today, Omnigent-style
-meta-harnesses later — can attach metadata to sessions they orchestrate. Session Buddy calls
+Tools that *run* agent sessions rather than author them — Traycer and Conductor today,
+Omnigent-style meta-harnesses later — can attach metadata to sessions they orchestrate. Session Buddy calls
 these **annotators**; see [docs/data-model.md](docs/data-model.md) for the model and how to add
 one.
 
 ```sh
-uv tool install "git+https://github.com/domjancik/session-buddy[traycer]"
-sb index          # annotations attach automatically when the tool is present
+uv tool install "git+https://github.com/domjancik/session-buddy[traycer]"   # Traycer needs the extra
+sb index          # annotations attach automatically for whichever tools are present
 ```
 
-Traycer contributes the epic and per-agent titles it already holds. That fixes the worst titles
-in the index: an orchestrated session whose transcript opens with machine chatter is indexed as
-`<task-notification> <task-id>bi8qdvx1g…`, while Traycer knows it as
-`ACME-142 retry backoff gate`.
+Conductor needs no extra — it stores its metadata in SQLite, which is built in.
+
+Both fix the worst titles in the index, because an orchestrated session opens with whatever
+the orchestrator injected rather than with what you asked. Traycer contributes epic and
+per-agent titles; Conductor contributes the workspace, its branch, and the session name shown
+in its UI — otherwise every session it has run is titled `<system_instruction> You are working
+in…`.
 
 ```sh
 sb "retry backoff" --show-ext              # show annotator metadata under each hit
 sb "retry backoff" --ext traycer.epic_title=Payments   # scope to one epic
 sb "migration" --ext traycer                  # only sessions Traycer orchestrated
+sb "review" --ext conductor.workspace=acme-mono   # one Conductor worktree
 sb groups                                     # list epics: id, session count, title
 ```
 
