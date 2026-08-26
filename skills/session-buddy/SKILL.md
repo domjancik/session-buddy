@@ -27,6 +27,7 @@ sb "retry backoff PR review" --limit 8
 | `--no-semantic` | literal matching only |
 | `--ext SOURCE[.KEY][=VALUE]` | filter on orchestrator metadata, e.g. `--ext traycer.epic_title=Payments` |
 | `--show-ext` | print that metadata under each hit |
+| `--branch NAME` | sessions that touched a branch (substring or `*` glob), not just started on it |
 
 Orchestrators (Traycer and Conductor today) may annotate sessions they ran. When present, titles come from
 the orchestrator rather than the transcript's first line, and `sb groups` lists the epics with
@@ -106,5 +107,9 @@ pass vs. round two — rather than listing them flat.
   coordinating session, not the one that did the work. Trust the score and the excerpts.
 - **Subagent transcripts are indexed too**, under `<session>/subagents/agent-*.jsonl`. The real
   work often lives there while the parent holds only the handoff message.
+- **The branch a session started on is not the branch it worked on.** `--branch` covers
+  branches created, pushed or checked out mid-session; the `branches:` line under each hit
+  shows how each was seen. Do not conclude a branch is unused from a query against one
+  session's starting branch.
 - **Interactive TUI use leaves no transcript.** A missing session proves nothing about whether
   the user did that work by hand.

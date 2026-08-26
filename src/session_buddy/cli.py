@@ -117,6 +117,11 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument(
         "--show-ext", action="store_true", help="Print annotator metadata under each result."
     )
+    search_parser.add_argument(
+        "--branch",
+        help="Only sessions that touched this branch (substring, or a glob with *). "
+        "Covers branches created, pushed or checked out mid-session, not just the start branch.",
+    )
     add_source_args(search_parser)
     search_parser.set_defaults(func=cmd_search)
 
@@ -209,6 +214,7 @@ def cmd_search(args: argparse.Namespace) -> int:
         cwd=args.cwd,
         semantic=not args.no_semantic,
         ext=args.ext,
+        branch=args.branch,
     )
     for index, result in enumerate(results, start=1):
         print(format_result_line(index, result))
@@ -218,9 +224,15 @@ def cmd_search(args: argparse.Namespace) -> int:
             print(f"    branch: {result.git_branch}")
         if result.updated_at:
             print(f"    updated: {format_time(result.updated_at)} UTC")
-        if getattr(args, "show_ext", False):
+        if getattr(args, "show_ext", False) or getattr(args, "branch", None):
             db = IndexDatabase(args.db)
             try:
+                refs = db.branches_for(result.provider, result.session_id)
+                if refs:
+                    rendered = ", ".join(
+                        f"{ref.branch} ({ref.evidence})" for ref in refs
+                    )
+                    print(f"    branches: {rendered}")
                 for source, pairs in db.annotations_for(result.provider, result.session_id).items():
                     rendered = " ".join(f"{k}={v}" for k, v in pairs.items())
                     print(f"    {source}: {rendered}")

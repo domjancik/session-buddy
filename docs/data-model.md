@@ -34,6 +34,10 @@ Only fields that every tool means the same way live in the `sessions` table.
 **Normalized:** `provider`, `session_id`, `title`, `cwd`, `created_at`, `updated_at`,
 `git_branch`, and the transcript-derived text (`first_prompt`, `summary`, `preview`).
 
+Git branches are normalized too, in their own table. Unlike epics and swarms, a branch means
+the same thing to every tool, so it belongs in core rather than under an annotator's
+namespace.
+
 **Not normalized:** everything an orchestrator knows. Traycer has epics; Omnigent has swarms;
 a future tool will have projects or runs. These look alike and are not: flattening them into
 one `group_id` column forces a lossy mapping and destroys the tool's own semantics. They stay
@@ -133,6 +137,29 @@ both assumptions:
   `(time_updated, time_created)`).
 
 Any future provider backed by a shared database or a server should follow the same two rules.
+
+### Branches
+
+`sessions.git_branch` is the branch a session *started* on — the providers record it once, at
+launch. That is not the branch a session worked on: one that starts on `feat/a`, creates a
+worktree for `feat/b` and pushes it leaves `feat/b` nowhere in that column, so filtering on it
+silently returns nothing.
+
+`session_branches(provider, session_id, branch, evidence)` holds every branch a session can be
+shown to have touched. It is rebuilt from the transcript on each re-index, so it never drifts
+from the source, and `evidence` records *how* the branch was seen: `start`, `push`, `worktree`,
+`status`, `checkout`.
+
+Which patterns to match is a measurement, not a guess. On a real index, `git push` appears in
+186 sessions and `worktree add` in 75, while the obvious `checkout -b` appears in 17 — and had
+zero hits in the session that motivated the feature, because branches usually arrive with a new
+worktree rather than a checkout in place.
+
+Precision matters more than recall here. The first implementation matched loosely and turned
+`-u`, `origin`, `/tmp/wt`, bare shas and ordinary prose into branches; a transcript that merely
+*discusses* git manufactured dozens. Every pattern now anchors on a shape git itself emits, and
+`normalise` rejects flags, paths, shas, digits and pseudo-refs. `main` is kept: working directly
+on it is a fact worth being able to query.
 
 ### Harness-injected text
 

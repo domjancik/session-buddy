@@ -32,10 +32,11 @@ def search_sessions(
     cwd: str | None = None,
     semantic: bool = True,
     ext: list[str] | None = None,
+    branch: str | None = None,
 ) -> list[SearchResult]:
     db = IndexDatabase(db_path)
     try:
-        return SearchEngine(db.conn).search(query, limit, provider, cwd, semantic, ext)
+        return SearchEngine(db.conn).search(query, limit, provider, cwd, semantic, ext, branch)
     finally:
         db.close()
 
@@ -53,16 +54,17 @@ class SearchEngine:
         cwd: str | None = None,
         semantic: bool = True,
         ext: list[str] | None = None,
+        branch: str | None = None,
     ) -> list[SearchResult]:
         query = collapse_ws(query)
         if not query:
             return []
         candidates: dict[tuple[str, str], Candidate] = {}
 
-        self.add_fts_candidates(candidates, query, provider, cwd, ext)
-        self.add_fuzzy_candidates(candidates, query, provider, cwd, ext)
+        self.add_fts_candidates(candidates, query, provider, cwd, ext, branch)
+        self.add_fuzzy_candidates(candidates, query, provider, cwd, ext, branch)
         if semantic:
-            self.add_semantic_candidates(candidates, query, provider, cwd, ext)
+            self.add_semantic_candidates(candidates, query, provider, cwd, ext, branch)
 
         if not candidates:
             return []
@@ -111,11 +113,12 @@ class SearchEngine:
         provider: str | None,
         cwd: str | None,
         ext: list[str] | None = None,
+        branch: str | None = None,
     ) -> None:
         rendered = fts_query(query)
         if not rendered:
             return
-        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext)
+        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch)
 
         message_sql = f"""
             select
@@ -163,8 +166,9 @@ class SearchEngine:
         provider: str | None,
         cwd: str | None,
         ext: list[str] | None = None,
+        branch: str | None = None,
     ) -> None:
-        filters, params = sql_filters(provider, cwd, ext=ext)
+        filters, params = sql_filters(provider, cwd, ext=ext, branch=branch)
         rows = self.conn.execute(
             f"""
             select provider, session_id, title, cwd, first_prompt, summary, preview
@@ -201,6 +205,7 @@ class SearchEngine:
         provider: str | None,
         cwd: str | None,
         ext: list[str] | None = None,
+        branch: str | None = None,
     ) -> None:
         backend_row = self.conn.execute(
             "select backend, dim from embeddings group by backend, dim order by count(*) desc limit 1"
@@ -215,7 +220,7 @@ class SearchEngine:
         except Exception:
             return
 
-        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext)
+        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch)
         rows = self.conn.execute(
             f"""
             select e.provider, e.session_id, e.text, e.embedding, e.dim
@@ -263,7 +268,13 @@ def parse_ext_filter(expr: str) -> tuple[str, str, str]:
     return source.strip(), key.strip(), value.strip().replace("*", "%")
 
 
-def sql_filters(provider: str | None, cwd: str | None, table_alias: str = "sessions", ext: list[str] | None = None) -> tuple[str, list[str]]:
+def sql_filters(
+    provider: str | None,
+    cwd: str | None,
+    table_alias: str = "sessions",
+    ext: list[str] | None = None,
+    branch: str | None = None,
+) -> tuple[str, list[str]]:
     conditions = [f"{table_alias}.stale = 0"]
     params: list[str] = []
     if provider:
@@ -288,6 +299,13 @@ def sql_filters(provider: str | None, cwd: str | None, table_alias: str = "sessi
             clause += " and a.value like ?"
             params.append(f"%{value}%" if "%" not in value else value)
         conditions.append(clause + ")")
+    if branch:
+        # Matches any branch the session touched, not just the one it started on.
+        conditions.append(
+            "exists (select 1 from session_branches b where b.provider = "
+            f"{table_alias}.provider and b.session_id = {table_alias}.session_id and b.branch like ?)"
+        )
+        params.append(branch.replace("*", "%") if "*" in branch else f"%{branch}%")
     return " and " + " and ".join(conditions), params
 
 

@@ -83,3 +83,17 @@ class AnnotatedTitle:
     source: str
     title: str
     priority: int = 0
+
+
+@dataclass(slots=True)
+class BranchRef:
+    """A branch a session touched, and how that was observed.
+
+    `evidence` is one of start, push, worktree, status, checkout — kept so a surprising
+    match can be explained rather than merely trusted.
+    """
+
+    provider: str
+    session_id: str
+    branch: str
+    evidence: str

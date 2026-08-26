@@ -40,6 +40,20 @@ traycer  c93a1d55    0 sessions  Public API Docs Refresh
 The count is sessions present in *this* index, so it reflects what a search can actually
 reach — a group whose sessions were never indexed reads 0.
 
+`--branch` finds sessions by the branches they touched, which is not the same as the branch
+they started on:
+
+```console
+$ sb "amount threshold" --branch acme-142
+ 1. claude 0.648 2026-02-13 11:38 ACME-142 retry backoff gate
+    branches: acme-142-retry-backoff (push), acme-142-retry-backoff (worktree), acme-155-other (start)
+```
+
+A session often creates or pushes a branch it did not start on, so the provider's own
+`git_branch` answers the wrong question. Branches are read out of the transcript instead —
+from push output, `worktree add`, `On branch`, and `checkout -b` — and each one records how it
+was seen.
+
 The TUI adds a preview pane and resume shortcuts:
 
 ![Session Buddy TUI](docs/tui.svg)
