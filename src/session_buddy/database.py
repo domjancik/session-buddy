@@ -5,7 +5,8 @@ import time
 from pathlib import Path
 
 from .embeddings import Embedder, pack_vector
-from .models import AnnotatedTitle, Annotation, MessageRecord, SessionRecord, SourceState
+from .branches import extract_branches
+from .models import AnnotatedTitle, Annotation, BranchRef, MessageRecord, SessionRecord, SourceState
 from .text import truncate
 
 
@@ -94,6 +95,14 @@ class IndexDatabase:
                 primary key (provider, session_id, source, key)
             );
 
+            create table if not exists session_branches (
+                provider text not null,
+                session_id text not null,
+                branch text not null,
+                evidence text not null,
+                primary key (provider, session_id, branch, evidence)
+            );
+
             create table if not exists annotation_groups (
                 source text not null,
                 group_id text not null,
@@ -120,6 +129,8 @@ class IndexDatabase:
             create index if not exists idx_embeddings_backend on embeddings(backend);
             create index if not exists idx_annotations_lookup on annotations(source, key, value);
             create index if not exists idx_annotations_session on annotations(provider, session_id);
+            create index if not exists idx_session_branches_branch on session_branches(branch);
+            create index if not exists idx_session_branches_session on session_branches(provider, session_id);
             """
         )
         self.ensure_column("source_state", "metadata_fingerprint", "text not null default ''")
@@ -267,6 +278,17 @@ class IndexDatabase:
             for row in rows
         ]
 
+    def branches_for(self, provider: str, session_id: str) -> list[BranchRef]:
+        rows = self.conn.execute(
+            "select provider, session_id, branch, evidence from session_branches"
+            " where provider = ? and session_id = ? order by branch, evidence",
+            (provider, session_id),
+        ).fetchall()
+        return [
+            BranchRef(row["provider"], row["session_id"], row["branch"], row["evidence"])
+            for row in rows
+        ]
+
     def annotation_sources(self) -> list[str]:
         return [row[0] for row in self.conn.execute("select distinct source from annotations order by source")]
 
@@ -326,6 +348,15 @@ class IndexDatabase:
                     record.summary,
                     record.preview,
                 ),
+            )
+            self.conn.execute(
+                "delete from session_branches where provider = ? and session_id = ?",
+                (record.provider, record.session_id),
+            )
+            self.conn.executemany(
+                "insert or replace into session_branches (provider, session_id, branch, evidence)"
+                " values (?, ?, ?, ?)",
+                [(b.provider, b.session_id, b.branch, b.evidence) for b in extract_branches(record)],
             )
             for message in record.messages:
                 message_id = self.insert_message(message)
