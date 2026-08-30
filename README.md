@@ -58,6 +58,16 @@ The TUI adds a preview pane and resume shortcuts:
 
 ![Session Buddy TUI](docs/tui.svg)
 
+## Contributing
+
+Contributions are welcome, and support for another tool is the most useful kind — see
+[CONTRIBUTING.md](CONTRIBUTING.md) and [docs/data-model.md](docs/data-model.md), which answers
+the question that decides where the code goes: *does this tool write the transcript?*
+
+One thing to know before filing anything: this tool indexes your own agent sessions, so its
+data is as sensitive as your session history. Redact transcript content out of issues, PRs and
+fixtures. Nothing here talks to the network, and that is not going to change.
+
 ## Supported Tools
 
 | Tool | Role | Reads | Needs |

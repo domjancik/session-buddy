@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a capability or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to find out
+      description: |
+        The question you could not answer, rather than the feature you have in mind. `--branch`
+        exists because "which session worked on this branch?" could not be answered — the
+        column recorded only the branch a session *started* on.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How you work around it today
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you think would help (optional)
+  - type: markdown
+    attributes:
+      value: |
+        Two things this project will not do: send anything off the machine, and normalise a
+        tool-specific concept into the core schema. Orchestrator concepts stay namespaced —
+        see [docs/data-model.md](../blob/main/docs/data-model.md).
