@@ -1,0 +1,71 @@
+name: Support a new tool
+description: Ask for (or offer) support for another agent harness or orchestrator
+labels: [new-tool]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful contribution to this project. Read
+        [docs/data-model.md](../blob/main/docs/data-model.md) first — the answers below map
+        directly onto how the code is structured.
+
+        **Redact anything real** in the sample you paste.
+  - type: input
+    id: tool
+    attributes:
+      label: Which tool
+      placeholder: name and link
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Does this tool write the transcript itself?
+      description: |
+        Yes → it is a **provider** (it owns the conversation, like Claude Code or opencode).
+        No → it is an **annotator** (it runs or labels somebody else's sessions, like Traycer
+        or Conductor). Some tools are both.
+      options:
+        - "Yes — it writes its own transcripts (provider)"
+        - "No — it runs or labels another tool's sessions (annotator)"
+        - "Both"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: store
+    attributes:
+      label: Where does it store data
+      description: Path on disk, and the format if you know it (JSONL, SQLite, something else).
+      placeholder: "~/.thing/sessions/<project>/<id>.jsonl — one file per session"
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: A redacted sample record
+      description: |
+        One or two records with real content replaced. Enough to show the shape: where the
+        session id, timestamps, working directory, roles, and message text live.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: join
+    attributes:
+      label: For annotators — how does it reference the underlying session
+      description: |
+        The field holding the other tool's session id, and how you tell which harness it was.
+        Conductor stores `claude_session_id` plus `agent_type`; Traycer uses `harnessSessionId`
+        plus `harnessId`.
+  - type: input
+    id: resume
+    attributes:
+      label: How do you resume a session from the CLI
+      placeholder: "thing --session <id>, run from the session's directory"
+  - type: checkboxes
+    id: offer
+    attributes:
+      label: Would you like to implement it
+      options:
+        - label: I am happy to open a PR for this

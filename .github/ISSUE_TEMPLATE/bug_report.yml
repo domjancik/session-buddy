@@ -1,0 +1,62 @@
+name: Bug report
+description: Something indexes, searches, or resumes incorrectly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Redact your transcripts.** Session Buddy indexes your own agent sessions, so output
+        pasted here may contain client names, tickets, or credentials. Replace real names with
+        invented ones — the shape of the problem is what matters.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, and what it did instead of what you expected.
+      placeholder: |
+        $ sb "…" --branch feature-x
+        (no results, but the session exists)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: tools
+    attributes:
+      label: Which tools are involved
+      multiple: true
+      options:
+        - Claude Code
+        - Codex
+        - opencode
+        - pi
+        - Traycer
+        - Conductor
+        - Not tool-specific / unsure
+    validations:
+      required: true
+  - type: textarea
+    id: version
+    attributes:
+      label: Version and platform
+      description: "Output of `sb --help | head -1`, your OS, and `python3 --version`."
+    validations:
+      required: true
+  - type: textarea
+    id: index-state
+    attributes:
+      label: Index state (optional)
+      description: |
+        `sb status` output, and `sb index` counts if the problem is about indexing. These are
+        counts only, no transcript content.
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Privacy
+      options:
+        - label: I have redacted any real transcript content from this report
+          required: true
