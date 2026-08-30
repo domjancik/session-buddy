@@ -229,8 +229,15 @@ def test_run_restore_worktree_requires_restore_command() -> None:
 
 @pytest.mark.parametrize("provider,version_arg", [("claude", "--version"), ("codex", "--version")])
 def test_real_agent_cli_is_executable(provider: str, version_arg: str) -> None:
+    """Smoke-test executable resolution against a real CLI, when one is installed.
+
+    Skipped rather than failed when it is not: almost nobody has every harness, and CI has
+    none. Asserting presence made the suite pass only on a machine that happened to have
+    both binaries.
+    """
     executable = resolve_agent_executable(provider)
-    assert executable is not None, f"{provider} CLI should be available"
+    if executable is None:
+        pytest.skip(f"{provider} CLI is not installed on this machine")
 
     command = PreparedResumeCommand(
         provider=provider,
