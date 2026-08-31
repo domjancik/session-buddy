@@ -204,10 +204,17 @@ map is the epic record defined in `traycerai/traycer` at
   chats, artifacts, deletedArtifacts, tuiAgents, roleClaims }
 ```
 
-Traycer binds harness sessions in **two** containers, and both must be read:
+Traycer binds harness sessions in **two** containers within that record, and both must be read:
 
 - `tuiAgents[]` — terminal agents; the binding is `harnessId` + `harnessSessionId` on the entry.
 - `chats[]` — desktop-app chats; the binding is `activeSessionChain.{harnessId, sessionId}`.
+
+There is also a **second store**, and it is not a mirror:
+`~/.traycer/host/epic-state/<epic_id>/chat/chat.db`, an event-sourced SQLite log. The
+materialised chat lives in `chat_projection.projection_json`, carrying the same binding under
+`tuiAgent.{harnessId, harnessSessionId}` plus the chat title. It holds no epic title — the epic
+is identified by directory name — so the two stores are complementary and the seeds supply the
+epic title for a chat store's bindings.
 
 Both normalise to one *binding* (kind, id, title, parent, provider, session_id, workspace).
 
@@ -223,6 +230,16 @@ Three traps worth recording:
   longer references its earlier sessions, so those stay un-annotated.
 - `desktop-windows.json` also contains epic names, but only for tabs that are currently open —
   on a real machine that was 10 of 52 epics. It is not a usable source.
+- **The two stores disagree about the same epic, and a clean decode is not coverage.** Measured
+  on one machine: 197 bound sessions in the seeds, 82 in the chat stores, and *zero* in both.
+  One epic's seed decoded fine and reported `tuiAgents: 0, chats: 16` while its chat.db held all
+  46 chats and every binding. Absence from one store says nothing about the other. This is why
+  `detect()` accepts either store alone, and why the chat stores are read *second*: writes are
+  `insert or replace`, so the store Traycer keeps current wins any overlap.
+- **Read the chat store with `mode=ro` on the live file, never a copy of the `.db` alone.**
+  Traycer runs in WAL mode; a read-only connection follows the `-wal`, but copying the database
+  without its sidecar silently returns a stale subset. That mistake is what first made the
+  chat store look like it held 52 sessions rather than 82.
 - The seed is the only complete local copy of an epic title. Reading it requires an actual Yjs
   decode; pattern-matching the binary gets close enough to look right and is wrong in ways that
   vary per file.
