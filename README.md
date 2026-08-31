@@ -76,7 +76,7 @@ fixtures. Nothing here talks to the network, and that is not going to change.
 | Codex | provider — owns transcripts | `~/.codex/sessions`, `state_5.sqlite`, `session_index.jsonl` | built in |
 | opencode | provider — owns transcripts | `~/.local/share/opencode/opencode.db` | built in |
 | pi | provider — owns transcripts | `~/.pi/agent/sessions`, `~/.pi/profiles/*/sessions` | built in |
-| Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics` | `[traycer]` extra |
+| Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics`, `~/.traycer/host/epic-state/*/chat/chat.db` | `[traycer]` extra for the epic seeds only |
 | Conductor | annotator — workspace, branch and session names for sessions it runs | `~/Library/Application Support/com.conductor.app/conductor.db` | built in |
 
 A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
@@ -203,7 +203,10 @@ uv tool install "git+https://github.com/domjancik/session-buddy[traycer]"   # Tr
 sb index          # annotations attach automatically for whichever tools are present
 ```
 
-Conductor needs no extra — it stores its metadata in SQLite, which is built in.
+Conductor needs no extra — it stores its metadata in SQLite, which is built in. Traycer keeps
+*two* stores that cover different epics: Yjs epic seeds, which need the `[traycer]` extra to
+decode, and a per-epic SQLite chat store, which does not. Both are read and merged, so Traycer
+without the extra still contributes every session bound in the chat store.
 
 Both fix the worst titles in the index, because an orchestrated session opens with whatever
 the orchestrator injected rather than with what you asked. Traycer contributes epic and

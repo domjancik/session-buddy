@@ -198,3 +198,35 @@ def test_agents_and_chats_both_counted_in_groups(tmp_path):
         "session-1",
         "019f0000-0000-7000-8000-000000000001",
     }
+
+
+def test_the_epic_title_from_a_seed_reaches_chat_store_bindings(tmp_path):
+    """The stores are complementary: chat.db knows its epic only by directory name."""
+    from test_annotator_traycer_chat import chat, write_chat_store
+
+    write_epic(tmp_path, "epic-1", "Disputes Backfill Strategy", [])
+    write_chat_store(tmp_path, "epic-1", [chat()])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    pairs = {(a.key, a.value) for a in result.annotations}
+    assert ("epic_title", "Disputes Backfill Strategy") in pairs
+    assert ("agent_title", "ws-retry-semantics") in pairs
+    assert [g["title"] for g in result.groups] == ["Disputes Backfill Strategy"]  # one group, not two
+
+
+def test_the_chat_store_wins_when_both_name_the_same_session(tmp_path):
+    """Writes are insert-or-replace, so the chat store must be read second: it is current."""
+    from test_annotator_traycer_chat import chat, write_chat_store
+
+    stale = {**AGENT, "harnessSessionId": "session-9", "title": "stale seed title"}
+    write_epic(tmp_path, "epic-1", "Epic", [stale])
+    write_chat_store(tmp_path, "epic-1", [chat()])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    titles = [t.title for t in result.titles if t.session_id == "session-9"]
+    assert titles[-1] == "ws-retry-semantics"
+    agent_titles = [a.value for a in result.annotations
+                    if a.session_id == "session-9" and a.key == "agent_title"]
+    assert agent_titles[-1] == "ws-retry-semantics"
