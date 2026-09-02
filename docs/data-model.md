@@ -211,8 +211,11 @@ Traycer binds harness sessions in **two** containers within that record, and bot
 
 There is also a **second store**, and it is not a mirror:
 `~/.traycer/host/epic-state/<epic_id>/chat/chat.db`, an event-sourced SQLite log. The
-materialised chat lives in `chat_projection.projection_json`, carrying the same binding under
-`tuiAgent.{harnessId, harnessSessionId}` plus the chat title. It holds no epic title — the epic
+materialised chat lives in `chat_projection.projection_json`, in two row kinds whose bindings
+live in different places: `tenantKind: tui-agent` under `tuiAgent.{harnessId, harnessSessionId}`,
+and `tenantKind: chat` — a desktop chat with no `tuiAgent` — under
+`hostPrivate.data.activeSessionChain.{harnessId, sessionId}`. A resumed chat's earlier sessions
+survive only in each message's `sessionAnchor`, and are bound from there. It holds no epic title — the epic
 is identified by directory name — so the two stores are complementary and the seeds supply the
 epic title for a chat store's bindings.
 
@@ -226,8 +229,14 @@ Three traps worth recording:
 - **Reading only `tuiAgents` misses every GUI chat.** An epic driven from the desktop app has
   `tuiAgents: []` and all of its sessions under `chats` — that was a real bug, and the sessions
   it silently skipped were the ones a search most needed titles for.
-- `activeSessionChain` names the *live* session only. A chat that was forked or resumed no
-  longer references its earlier sessions, so those stay un-annotated.
+- `activeSessionChain` names the *live* session only. In the seeds a forked or resumed chat's
+  earlier sessions stay un-annotated; in the chat store they are recovered from each message's
+  `sessionAnchor` (2 sessions on the machine measured).
+- **The same "one container, silently missed" bug recurred one store deeper.** The seeds taught
+  that reading only `tuiAgents` loses every GUI chat. chat.db repeats it: GUI chats have no
+  `tuiAgent`, and their chain sits under `hostPrivate.data`, so a top-level probe returns 0 and
+  looks like proof the store is all terminal agents. It was 15 of 106 rows. When a store has
+  container kinds, enumerate them before concluding one is absent.
 - `desktop-windows.json` also contains epic names, but only for tabs that are currently open —
   on a real machine that was 10 of 52 epics. It is not a usable source.
 - **The two stores disagree about the same epic, and a clean decode is not coverage.** Measured

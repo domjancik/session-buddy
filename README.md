@@ -76,7 +76,7 @@ fixtures. Nothing here talks to the network, and that is not going to change.
 | Codex | provider — owns transcripts | `~/.codex/sessions`, `state_5.sqlite`, `session_index.jsonl` | built in |
 | opencode | provider — owns transcripts | `~/.local/share/opencode/opencode.db` | built in |
 | pi | provider — owns transcripts | `~/.pi/agent/sessions`, `~/.pi/profiles/*/sessions` | built in |
-| Traycer | annotator — epic and agent titles for sessions it orchestrates | `~/.traycer/epics`, `~/.traycer/host/epic-state/*/chat/chat.db` | `[traycer]` extra for the epic seeds only |
+| Traycer | annotator — epic, agent and chat titles for sessions it orchestrates | `~/.traycer/epics`, `~/.traycer/host/epic-state/*/chat/chat.db` | `[traycer]` extra for the epic seeds only |
 | Conductor | annotator — workspace, branch and session names for sessions it runs | `~/Library/Application Support/com.conductor.app/conductor.db` | built in |
 
 A **provider** owns a transcript and produces session rows. An **annotator** describes sessions
