@@ -147,3 +147,92 @@ def test_the_chat_store_reads_uncheckpointed_wal_content(tmp_path):
         conn.close()
 
     assert {b["session_id"] for b in record["bindings"]} == {"session-9", "session-11"}
+
+
+CHAIN = {
+    "harnessId": "claude",
+    "sessionId": "session-gui",
+    "profileId": None,
+    "sessionWorkspaceSnapshot": {
+        "primaryWorkspace": "/repo/.worktrees/72-icy",
+        "secondaryWorkspaces": ["/elsewhere"],
+        "workspaceKind": "session-snapshot",
+    },
+}
+
+
+def gui_chat(*, chain=None, messages=(), **overrides):
+    """A desktop-app chat: `tenantKind: chat`, no tuiAgent, binding under hostPrivate."""
+    record = chat(
+        chatId="chat-gui",
+        tenantKind="chat",
+        title="Dispute Status CSV Generation",
+        tuiAgent=None,
+        messages=list(messages),
+        hostPrivate={"revision": 0, "data": {"activeSessionChain": chain or dict(CHAIN)}},
+    )
+    record.update(overrides)
+    return record
+
+
+def test_a_desktop_chat_is_bound_through_hostprivate(tmp_path):
+    """These have no tuiAgent at all; reading only that key loses every GUI chat."""
+    write_chat_store(tmp_path, "epic-9", [gui_chat()])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    pairs = {(a.key, a.value) for a in result.annotations}
+    assert ("chat_title", "Dispute Status CSV Generation") in pairs
+    assert ("chat_id", "chat-gui") in pairs
+    assert ("kind", "chat") in pairs  # not agent: the seeds' chat_* keys, not agent_*
+    assert ("workspace", "/repo/.worktrees/72-icy") in pairs
+    assert {(a.provider, a.session_id) for a in result.annotations} == {("claude", "session-gui")}
+    assert [t.title for t in result.titles] == ["Dispute Status CSV Generation"]
+
+
+def test_a_top_level_session_chain_is_not_where_the_binding_lives(tmp_path):
+    """The trap: probing the top level finds nothing and reads as 'no GUI chats here'.
+
+    The Yjs `chats[]` entries keep `activeSessionChain` at the top level; chat.db nests it
+    under `hostPrivate.data`. A top-level probe against this store is silently empty.
+    """
+    stray = chat(chatId="chat-gui", tenantKind="chat", tuiAgent=None,
+                 activeSessionChain=dict(CHAIN), hostPrivate={"revision": 0, "data": {}})
+    write_chat_store(tmp_path, "epic-9", [stray])
+
+    assert TraycerAnnotator().collect(tmp_path).annotations == []
+
+
+def test_earlier_sessions_of_a_resumed_chat_are_bound_too(tmp_path):
+    """A resumed chat leaves its previous sessions only in each message's sessionAnchor."""
+    anchor = {"harnessId": "claude", "sessionId": "session-earlier",
+              "sessionWorkspaceSnapshot": {"primaryWorkspace": "/repo/old"}}
+    messages = [
+        {"id": "m1", "body": {"sessionAnchor": anchor}},
+        {"id": "m2", "body": {"sessionAnchor": dict(CHAIN)}},   # the live one, already bound
+        {"id": "m3", "body": {"sessionAnchor": anchor}},        # repeated, must not duplicate
+    ]
+    write_chat_store(tmp_path, "epic-9", [gui_chat(messages=messages)])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    assert {a.session_id for a in result.annotations} == {"session-gui", "session-earlier"}
+    older = [a for a in result.annotations if a.session_id == "session-earlier"]
+    assert ("workspace", "/repo/old") in {(a.key, a.value) for a in older}
+    assert len([t for t in result.titles if t.session_id == "session-earlier"]) == 1
+
+
+def test_a_chat_with_no_session_chain_binds_nothing(tmp_path):
+    write_chat_store(tmp_path, "epic-9", [gui_chat(hostPrivate={"revision": 0, "data": {}})])
+
+    assert TraycerAnnotator().collect(tmp_path).annotations == []
+
+
+def test_terminal_agents_and_desktop_chats_are_both_read(tmp_path):
+    write_chat_store(tmp_path, "epic-9", [chat(), gui_chat()])
+
+    result = TraycerAnnotator().collect(tmp_path)
+
+    assert {a.session_id for a in result.annotations} == {"session-9", "session-gui"}
+    assert {a.value for a in result.annotations if a.key == "kind"} == {"agent", "chat"}
+    assert result.groups[0]["sessions"] == "2"

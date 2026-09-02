@@ -302,21 +302,69 @@ def read_chat_store(db_path: Path, epic_id: str, epic_title: str) -> dict:
             continue
         updated_at = max(updated_at, int(chat.get("updatedAt") or 0))
         agent = chat.get("tuiAgent")
-        if not isinstance(agent, dict):
-            continue  # a chat with no terminal agent binds no session
-        bindings.append(
-            {
-                # Every chat.db row is a terminal agent (`tenantKind: tui-agent`), so these
-                # share the `agent_*` keys with the seeds' tuiAgents rather than `chat_*`.
-                "kind": "agent",
-                "id": str(agent.get("id") or chat.get("chatId") or ""),
-                # The chat and its agent carry the same title in every record measured; the
-                # chat's is preferred because a renamed tab writes there.
-                "title": str(chat.get("title") or agent.get("title") or "").strip(),
-                "parent_id": str(agent.get("parentId") or chat.get("parentChatId") or ""),
-                "provider": str(agent.get("harnessId") or ""),
-                "session_id": str(agent.get("harnessSessionId") or ""),
-                "workspace": first_workspace(agent.get("workspaceFolders")),
-            }
-        )
+        if isinstance(agent, dict):
+            bindings.append(
+                {
+                    # A terminal agent (`tenantKind: tui-agent`), so it shares the `agent_*`
+                    # keys with the seeds' tuiAgents rather than `chat_*`.
+                    "kind": "agent",
+                    "id": str(agent.get("id") or chat.get("chatId") or ""),
+                    # The chat and its agent carry the same title in every record measured;
+                    # the chat's is preferred because a renamed tab writes there.
+                    "title": str(chat.get("title") or agent.get("title") or "").strip(),
+                    "parent_id": str(agent.get("parentId") or chat.get("parentChatId") or ""),
+                    "provider": str(agent.get("harnessId") or ""),
+                    "session_id": str(agent.get("harnessSessionId") or ""),
+                    "workspace": first_workspace(agent.get("workspaceFolders")),
+                }
+            )
+            continue
+        bindings.extend(read_gui_chat(chat))
     return {"id": epic_id, "title": epic_title, "updated_at": updated_at, "bindings": bindings}
+
+
+def read_gui_chat(chat: dict) -> list[dict]:
+    """Bindings for a desktop-app chat (`tenantKind: chat`), which has no `tuiAgent`.
+
+    Its binding is nested at `hostPrivate.data.activeSessionChain`, *not* at the top level
+    where the Yjs `chats[]` entries keep theirs. Probing only the top level finds nothing and
+    makes a store of GUI chats look like a store of terminal agents - which is the same trap
+    as reading only `tuiAgents` from the seeds, one store further in.
+
+    `activeSessionChain` names the live session; a resumed or forked chat leaves its earlier
+    sessions behind in each message's `sessionAnchor`. Those are the same chat on the same
+    harness, so they are bound too rather than left unsearchable.
+    """
+    private = chat.get("hostPrivate")
+    data = private.get("data") if isinstance(private, dict) else None
+    chain = data.get("activeSessionChain") if isinstance(data, dict) else None
+    if not isinstance(chain, dict):
+        return []
+
+    title = str(chat.get("title") or "").strip()
+    chat_id = str(chat.get("chatId") or "")
+    parent_id = str(chat.get("parentChatId") or "")
+
+    def binding(source: dict) -> dict:
+        return {
+            "kind": "chat",
+            "id": chat_id,
+            "title": title,
+            "parent_id": parent_id,
+            "provider": str(source.get("harnessId") or ""),
+            "session_id": str(source.get("sessionId") or ""),
+            "workspace": primary_workspace(source.get("sessionWorkspaceSnapshot")),
+        }
+
+    bindings = [binding(chain)]
+    seen = {str(chain.get("sessionId") or "")}
+    for message in chat.get("messages") or []:
+        body = message.get("body") if isinstance(message, dict) else None
+        anchor = body.get("sessionAnchor") if isinstance(body, dict) else None
+        if not isinstance(anchor, dict):
+            continue
+        session_id = str(anchor.get("sessionId") or "")
+        if session_id and session_id not in seen:
+            seen.add(session_id)
+            bindings.append(binding(anchor))
+    return bindings
