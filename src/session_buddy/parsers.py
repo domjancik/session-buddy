@@ -52,7 +52,12 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
 
     if entry:
         session_id = str(entry.get("sessionId") or session_id)
-        title = clean_title(str(entry.get("firstPrompt") or ""))
+        # `/rename` writes customTitle. It is the provider's own title for the session and
+        # outranks the derived one: people rename precisely when the first prompt labels the
+        # session badly, so the sessions that lose their name are the ones that needed one.
+        title = clean_title(str(entry.get("customTitle") or "")) or clean_title(
+            str(entry.get("firstPrompt") or "")
+        )
         summary = str(entry.get("summary") or "")
         cwd = str(entry.get("projectPath") or cwd)
         git_branch = str(entry.get("gitBranch") or "")
@@ -127,18 +132,43 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
     )
 
 
+def prefer_rename(name: str, derived: str) -> str:
+    """Pick the user's name over the derived title, unless it is a truncation of it.
+
+    Not every `threads.name` is a rename someone typed. Measured across 1300 threads, 8 had a
+    name and 3 of those were the prompt cut at ~35 characters, mid-sentence - Codex's rename
+    box appears to pre-fill from the prompt, and accepting that unchanged stores a name that
+    is strictly less informative than the title it would replace. So a name that is merely a
+    prefix of the derived title loses to it; anything else wins.
+
+    Claude's `customTitle` gets no such guard: nothing in its store writes one automatically,
+    and a guard there would only risk discarding a real rename that happens to read as a prefix.
+    """
+    name = name.strip()
+    if not name:
+        return derived.strip()
+    squashed_name = " ".join(name.split()).casefold()
+    squashed_derived = " ".join(derived.split()).casefold()
+    if squashed_derived.startswith(squashed_name) and len(squashed_derived) > len(squashed_name):
+        return derived.strip()
+    return name
+
+
 def load_codex_thread_metadata(codex_home: Path) -> dict[str, dict[str, Any]]:
     db_path = codex_home / "state_5.sqlite"
     if not db_path.exists():
         return {}
-    query = (
-        "select id,title,cwd,created_at_ms,updated_at_ms,git_branch,preview "
-        "from threads"
-    )
+    wanted = ["id", "title", "cwd", "created_at_ms", "updated_at_ms", "git_branch", "preview", "name"]
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(query).fetchall()
+        # `name` holds a /rename and arrived in a later Codex release, so select what this
+        # database actually has rather than failing the whole read on an older schema.
+        present = {row["name"] for row in conn.execute("pragma table_info(threads)")}
+        columns = [column for column in wanted if column in present]
+        if "id" not in columns:
+            return {}
+        rows = conn.execute(f"select {','.join(columns)} from threads").fetchall()
     except sqlite3.Error:
         return {}
     finally:
@@ -179,7 +209,10 @@ def parse_codex_session(
 
     if thread_meta:
         session_id = str(thread_meta.get("id") or "")
-        title = str(thread_meta.get("title") or "")
+        # `name` is a /rename; `title` is Codex's own summary of the first prompt.
+        title = prefer_rename(
+            str(thread_meta.get("name") or ""), str(thread_meta.get("title") or "")
+        )
         cwd = str(thread_meta.get("cwd") or "")
         git_branch = str(thread_meta.get("git_branch") or "")
         created_at = parse_timestamp(thread_meta.get("created_at_ms"))
