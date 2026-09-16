@@ -253,6 +253,33 @@ Three traps worth recording:
   decode; pattern-matching the binary gets close enough to look right and is wrong in ways that
   vary per file.
 
+## Session titles a person set
+
+Both harnesses let you rename a session, and both keep that name apart from the title they
+derive themselves. The rename is read as the **provider's** title, not as an annotation: it is
+the provider's own store, and `title_source` stays `provider`. An annotator can still outrank
+it, and when that annotation is withdrawn the title falls back to the person's name rather
+than to the first prompt.
+
+| harness | rename lives in | derived title |
+| --- | --- | --- |
+| Claude Code | `sessions-index.json` → `customTitle` | `firstPrompt` |
+| Codex | `state_5.sqlite` → `threads.name` | `threads.title` |
+
+People rename precisely when the derived title labels the session badly, so dropping the name
+loses it on exactly the sessions that most needed one.
+
+**Not every stored name is a rename someone typed.** Measured across 1300 Codex threads, 8 had
+a `name` and 3 of those were the prompt cut at ~35 characters, mid-sentence — the rename box
+appears to pre-fill from the prompt, and accepting that unchanged stores something strictly
+less informative than the title it replaces. A name that is only a prefix of the derived title
+therefore loses to it. Claude's `customTitle` gets no such guard: nothing in its store writes
+one automatically, so a guard could only discard a real rename that happens to read as a prefix.
+
+`threads.name` arrived in a later Codex release, so the columns are selected against
+`pragma table_info` rather than named blindly — an older database would otherwise return no
+threads at all.
+
 ## Non-goals
 
 - **No cross-tool group table.** Epics, swarms and projects are not the same thing.
