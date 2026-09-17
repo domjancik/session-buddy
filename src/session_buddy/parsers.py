@@ -64,6 +64,11 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
         created_at = parse_timestamp(entry.get("created"))
         updated_at = parse_timestamp(entry.get("modified"))
 
+    # `/rename` appends a `custom-title` record to the transcript. The abandoned
+    # sessions-index.json `customTitle` above is kept only for transcripts old enough to
+    # still have an index entry; on a current install that file is no longer written.
+    custom_titles: list[str] = []
+
     idx = 0
     for row in stream_jsonl(path):
         row_session_id = row.get("sessionId")
@@ -82,6 +87,11 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
             updated_at = timestamp if updated_at is None else max(updated_at, timestamp)
 
         row_type = row.get("type")
+        if row_type == "custom-title":
+            value = str(row.get("customTitle") or "").strip()
+            if value:
+                custom_titles.append(value)
+            continue
         if row_type not in {"user", "assistant", "summary"}:
             continue
         message = row.get("message")
@@ -101,6 +111,17 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
 
     if not session_id:
         return None
+
+    # A launcher can set the title too (Traycer starts Claude with `--name`), and it writes
+    # the same record a person's /rename does - measured, they are byte-identical bar the
+    # value. What separates them is that a launcher's name is written once at startup and
+    # never changes, so a value that CHANGES within one transcript is a person renaming.
+    # A constant one is taken as the session's title but left outranked by annotators, which
+    # is what restores a real title to the 156 sessions a launcher had named the same thing.
+    renamed_by_user = len(set(custom_titles)) > 1
+    if custom_titles:
+        title = custom_titles[-1]
+
     if not cwd:
         cwd = infer_cwd_from_claude_project(path.parent.name)
     if not title:
@@ -126,6 +147,8 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
         file_size=stat.st_size,
         message_count=len(messages),
         first_prompt=truncate(first_prompt, 1000),
+        renamed_by_user=renamed_by_user,
+        titled=bool(custom_titles),
         summary=truncate(summary, 1000),
         preview=preview,
         messages=messages,

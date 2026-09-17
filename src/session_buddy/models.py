@@ -30,6 +30,10 @@ class SessionRecord:
     summary: str
     preview: str
     metadata_fingerprint: str = ""
+    renamed_by_user: bool = False
+    """The title is one a person typed, so no annotator may replace it."""
+    titled: bool = False
+    """The title is a name something chose, not the transcript's first prompt."""
     messages: list[MessageRecord] = field(default_factory=list)
 
 
