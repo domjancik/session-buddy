@@ -137,6 +137,10 @@ class IndexDatabase:
         # provider_title preserves what the transcript parser derived, so an annotator's
         # claim can be re-resolved (or withdrawn) without re-reading the transcript.
         self.ensure_column("sessions", "provider_title", "text not null default ''")
+        # A title someone chose, as opposed to the first prompt reused as a label. Only a
+        # chosen name earns the search bonus; boosting a derived title would double-count
+        # the first prompt, which the full-text index already scores.
+        self.ensure_column("sessions", "titled", "integer not null default 0")
         self.ensure_column("sessions", "title_source", "text not null default 'provider'")
         self.conn.execute(
             "update sessions set provider_title = title where provider_title = ''"
@@ -204,12 +208,23 @@ class IndexDatabase:
                 best[key] = t
         with self.conn:
             self.conn.execute(
-                "update sessions set title = provider_title, title_source = 'provider' where title_source != 'provider'"
+                "update sessions set title = provider_title, title_source = 'provider' "
+                "where title_source not in ('provider', 'user')"
+            )
+            # The reset above changes titles, so the search index has to follow it or a
+            # withdrawn annotator title stays findable under a name nothing displays.
+            self.conn.execute(
+                "update session_fts set title = (select s.title from sessions s "
+                " where s.provider = session_fts.provider and s.session_id = session_fts.session_id) "
+                "where exists (select 1 from sessions s "
+                " where s.provider = session_fts.provider and s.session_id = session_fts.session_id "
+                "   and s.title != session_fts.title)"
             )
             applied = 0
             for (provider, session_id), t in best.items():
                 cur = self.conn.execute(
-                    "update sessions set title = ?, title_source = ? where provider = ? and session_id = ?",
+                    "update sessions set title = ?, title_source = ?, titled = 1 "
+                    "where provider = ? and session_id = ? and title_source != 'user'",
                     (t.title, t.source, provider, session_id),
                 )
                 if cur.rowcount:
@@ -316,14 +331,15 @@ class IndexDatabase:
                 insert into sessions (
                     provider, session_id, title, provider_title, title_source, cwd, created_at, updated_at,
                     git_branch, source_path, file_mtime, file_size, message_count, first_prompt, summary,
-                    preview, stale
-                ) values (?, ?, ?, ?, 'provider', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    preview, stale, titled
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 """,
                 (
                     record.provider,
                     record.session_id,
                     record.title,
                     record.title,
+                    "user" if record.renamed_by_user else "provider",
                     record.cwd,
                     record.created_at,
                     record.updated_at,
@@ -335,6 +351,7 @@ class IndexDatabase:
                     record.first_prompt,
                     record.summary,
                     record.preview,
+                    1 if record.titled else 0,
                 ),
             )
             self.conn.execute(

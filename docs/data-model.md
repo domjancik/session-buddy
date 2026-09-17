@@ -263,11 +263,30 @@ than to the first prompt.
 
 | harness | rename lives in | derived title |
 | --- | --- | --- |
-| Claude Code | `sessions-index.json` → `customTitle` | `firstPrompt` |
+| Claude Code | a `custom-title` record **inside the transcript** | first prompt |
 | Codex | `state_5.sqlite` → `threads.name` | `threads.title` |
+
+Claude Code's `sessions-index.json` is **abandoned** — measured on one machine: 17 index files
+across 146 project directories, all frozen at one date, newest entry seven months old, and
+**0 of 72 entries point at a transcript that still exists** while 229 live transcripts have no
+entry at all. Its `customTitle` is still read, but only for transcripts old enough to have an
+entry; on a current install nothing writes that file. Reading it and calling renames supported
+was a fix against a dead file.
 
 People rename precisely when the derived title labels the session badly, so dropping the name
 loses it on exactly the sessions that most needed one.
+
+**A launcher can name a session too.** Traycer starts Claude with `--name`, which writes the
+same `custom-title` record a person's `/rename` writes — measured byte-identical bar the value,
+and both also write a matching `agent-name`, so that field discriminates nothing. What does:
+a launcher writes its name once at startup and never changes it, so a value that **changes**
+within one transcript is a person renaming. Measured across 160 transcripts carrying the
+record: 2 changed (real renames), 156 constant and orchestrator-annotated, 2 constant with no
+annotation. So a changed value is marked `title_source = user` and no annotator may replace it —
+which is what makes a rename stick inside an orchestrated worktree — while a constant one is
+taken as the provider's title and stays outranked by annotators, restoring a real title to the
+156. The 2 remaining sessions display their launcher's name; their first prompts stay in the
+full-text index, so nothing becomes unfindable.
 
 **Not every stored name is a rename someone typed.** Measured across 1300 Codex threads, 8 had
 a `name` and 3 of those were the prompt cut at ~35 characters, mid-sentence — the rename box
@@ -279,6 +298,21 @@ one automatically, so a guard could only discard a real rename that happens to r
 `threads.name` arrived in a later Codex release, so the columns are selected against
 `pragma table_info` rather than named blindly — an older database would otherwise return no
 threads at all.
+
+### Finding a session by its name
+
+A title someone chose is a claim about how to find the session, so it outranks a transcript
+that merely repeats the words. Without that, searching a session's own name returned it
+**4th**, behind three conversations that only discussed it: the ranking scores every column
+alike, and a long body beats a short exact title.
+
+An exact title match adds 0.5 to the score, a contained one 0.3. The value is set against the
+ceiling of the content signal rather than tuned to a case — the most a single content match can
+contribute is 0.45 — so naming a session beats any transcript that repeats the name.
+
+The bonus applies only to a title something *chose* (`titled`): a person's rename, a launcher's
+name, or an annotator's. A title derived from the first prompt does not earn it, or the first
+prompt would be scored twice, once as the title and once as its own text.
 
 ## Non-goals
 

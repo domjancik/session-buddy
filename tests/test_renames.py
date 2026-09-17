@@ -191,3 +191,145 @@ def test_a_prefilled_codex_rename_does_not_shorten_the_title(tmp_path):
 
     assert record is not None
     assert record.title == "do we have a script that regens all events values for all services"
+
+
+# --- the rename as Claude Code actually stores it now -------------------------------------
+# sessions-index.json is abandoned (measured: 0 of 72 entries point at a transcript that
+# still exists). `/rename` appends a `custom-title` record to the transcript itself.
+
+def write_transcript(tmp_path: Path, *custom_titles: str, session_id="aaaaaaaa-1111-2222-3333-444444444444") -> Path:
+    home = tmp_path / "claude"
+    project = home / "projects" / "-repo-demo"
+    project.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"type": "user", "timestamp": "2026-09-17T10:00:00Z", "sessionId": session_id,
+         "cwd": "/repo/demo", "message": {"role": "user", "content": FIRST_PROMPT}},
+        {"type": "assistant", "timestamp": "2026-09-17T10:00:05Z", "sessionId": session_id,
+         "message": {"role": "assistant", "content": [{"type": "text", "text": "the delivery gate"}]}},
+    ]
+    for value in custom_titles:
+        rows.append({"type": "custom-title", "customTitle": value, "sessionId": session_id})
+    (project / f"{session_id}.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    return home
+
+
+def index(tmp_path: Path, home: Path, annotators=()) -> Path:
+    db_path = tmp_path / "index.sqlite"
+    index_all(db_path, claude_home=home, codex_home=tmp_path / "missing",
+              annotators=list(annotators), semantic=False)
+    return db_path
+
+
+def title_row(db_path: Path):
+    db = IndexDatabase(db_path)
+    try:
+        return dict(db.conn.execute(
+            "select title, title_source, provider_title from sessions").fetchone())
+    finally:
+        db.close()
+
+
+def test_a_rename_in_the_transcript_becomes_the_title(tmp_path):
+    row = title_row(index(tmp_path, write_transcript(tmp_path, "ACME-142 retry budget")))
+
+    assert row["title"] == "ACME-142 retry budget"
+
+
+def test_the_last_rename_wins(tmp_path):
+    row = title_row(index(tmp_path, write_transcript(tmp_path, "first name", "second name")))
+
+    assert row["title"] == "second name"
+
+
+def test_a_changed_title_is_marked_as_a_persons_rename(tmp_path):
+    """A launcher writes one value and never changes it; a person renames mid-session."""
+    row = title_row(index(tmp_path, write_transcript(tmp_path, "Traycer", "My own name")))
+
+    assert row["title_source"] == "user"
+
+
+def test_a_constant_title_is_treated_as_the_providers_own(tmp_path):
+    row = title_row(index(tmp_path, write_transcript(tmp_path, "Traycer", "Traycer")))
+
+    assert row["title_source"] == "provider"
+
+
+def test_an_annotator_may_not_overwrite_a_persons_rename(tmp_path):
+    """Renaming a session inside an orchestrated worktree must still win."""
+    db_path = index(tmp_path, write_transcript(tmp_path, "Traycer", "My own name"))
+    db = IndexDatabase(db_path)
+    try:
+        db.apply_annotated_titles(
+            [AnnotatedTitle("claude", "aaaaaaaa-1111-2222-3333-444444444444", "traycer", "Tab name", 10)]
+        )
+        row = db.conn.execute("select title, title_source from sessions").fetchone()
+        assert row["title"] == "My own name"
+        assert row["title_source"] == "user"
+    finally:
+        db.close()
+
+
+def test_an_annotator_still_replaces_a_launcher_set_title(tmp_path):
+    """The 156 sessions a launcher named identically are exactly why annotators still win."""
+    db_path = index(tmp_path, write_transcript(tmp_path, "Traycer"))
+    db = IndexDatabase(db_path)
+    try:
+        db.apply_annotated_titles(
+            [AnnotatedTitle("claude", "aaaaaaaa-1111-2222-3333-444444444444", "traycer", "Tab name", 10)]
+        )
+        assert db.conn.execute("select title from sessions").fetchone()["title"] == "Tab name"
+    finally:
+        db.close()
+
+
+def test_a_withdrawn_annotator_title_leaves_nothing_stale_in_the_search_index(tmp_path):
+    """The reset changes titles, so the search index has to follow or the old name still hits."""
+    db_path = index(tmp_path, write_transcript(tmp_path, "Traycer"))
+    db = IndexDatabase(db_path)
+    try:
+        sid = "aaaaaaaa-1111-2222-3333-444444444444"
+        db.apply_annotated_titles([AnnotatedTitle("claude", sid, "traycer", "Tab name", 10)])
+        assert db.conn.execute("select title from session_fts").fetchone()["title"] == "Tab name"
+
+        db.apply_annotated_titles([])
+
+        assert db.conn.execute("select title from session_fts").fetchone()["title"] == "Traycer"
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize(
+    "query,title,expected",
+    [
+        ("Session Buddy", "Session Buddy", 1.0),
+        ("  session   buddy ", "Session Buddy", 1.0),   # spacing and case are not the signal
+        ("buddy", "Session Buddy", 0.6),
+        ("unrelated", "Session Buddy", 0.0),
+        ("", "Session Buddy", 0.0),
+        ("Session Buddy", "", 0.0),
+    ],
+)
+def test_title_match(query, title, expected):
+    from session_buddy.search import title_match
+
+    assert title_match(query, title) == expected
+
+
+def test_a_named_session_outranks_a_transcript_that_merely_says_the_name(tmp_path):
+    """The reported symptom: searching a session's own name returned it 4th."""
+    from session_buddy.search import search_sessions
+
+    home = write_transcript(tmp_path, "Retry Budget Rework")
+    project = home / "projects" / "-repo-demo"
+    chatty = "aaaaaaaa-9999-2222-3333-444444444444"
+    (project / f"{chatty}.jsonl").write_text("\n".join(json.dumps(r) for r in [
+        {"type": "user", "timestamp": "2026-09-17T11:00:00Z", "sessionId": chatty, "cwd": "/repo/demo",
+         "message": {"role": "user", "content": "retry budget rework retry budget rework retry budget rework"}},
+        {"type": "assistant", "timestamp": "2026-09-17T11:00:02Z", "sessionId": chatty,
+         "message": {"role": "assistant", "content": [{"type": "text",
+          "text": "retry budget rework, retry budget rework, and more retry budget rework"}]}},
+    ]) + "\n")
+
+    hits = search_sessions(index(tmp_path, home), "Retry Budget Rework", semantic=False, limit=5)
+
+    assert hits[0].title == "Retry Budget Rework"

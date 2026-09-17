@@ -19,9 +19,29 @@ class Candidate:
     session_id: str
     fts_score: float = 0.0
     fuzzy_score: float = 0.0
+    title_score: float = 0.0
     semantic_score: float = 0.0
     recency_score: float = 0.0
     snippets: list[str] = field(default_factory=list)
+
+
+def title_match(query: str, title: str) -> float:
+    """How strongly a query names this session, rather than merely occurring inside it.
+
+    Someone who titles a session is telling us what to find it by, so that title has to
+    outrank a transcript that happens to repeat the words. Without this, a named session
+    loses to any long conversation mentioning the same phrase - measured: searching a
+    session's own name returned it 4th, behind three transcripts that merely discussed it.
+    """
+    q = " ".join(query.split()).casefold()
+    t = " ".join(title.split()).casefold()
+    if not q or not t:
+        return 0.0
+    if q == t:
+        return 1.0
+    if q in t:
+        return 0.6
+    return 0.0
 
 
 def search_sessions(
@@ -80,11 +100,21 @@ class SearchEngine:
             if row is None:
                 continue
             candidate.recency_score = recency_score(row["updated_at"], max_updated)
+            # Only a chosen name earns this; a title derived from the first prompt
+            # would otherwise be scored twice, once here and once as its own text.
+            if row["titled"]:
+                candidate.title_score = title_match(query, str(row["title"] or ""))
             score = (
                 candidate.fts_score * 0.45
                 + candidate.semantic_score * 0.35
                 + candidate.fuzzy_score * 0.15
                 + candidate.recency_score * 0.05
+                # Added on top rather than folded into the weights above, so every other
+                # ranking stays exactly as it was and only a title hit moves. 0.5 is chosen
+                # against the ceiling of the content signal, not tuned to a case: the best a
+                # single content match can contribute is 0.45 (fts rank 1), so naming a
+                # session beats any transcript that merely repeats the name.
+                + candidate.title_score * 0.5
             )
             snippets = candidate.snippets[:3] or [truncate(row["preview"] or row["first_prompt"], 260)]
             results.append(
@@ -138,7 +168,7 @@ class SearchEngine:
                 f.provider,
                 f.session_id,
                 snippet(session_fts, 6, '[', ']', '...', 18) as snippet,
-                bm25(session_fts) as rank
+                bm25(session_fts, 0.0, 0.0, 8.0, 1.0, 1.0, 1.0, 1.0) as rank
             from session_fts f
             join sessions s on s.provider = f.provider and s.session_id = f.session_id
             where session_fts match ?
