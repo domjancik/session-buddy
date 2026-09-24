@@ -258,6 +258,28 @@ When `tmux` is available and the command is not already running inside tmux, `sb
 
 The TUI shows an index-status banner on startup. Pass `--auto-index` to update changed sources and prune deleted index entries before opening the interface.
 
+It takes the same filters as `search`, and its preview shows the same per-session detail:
+
+```sh
+sb tui --ext traycer.epic_title=Payments
+sb tui --branch acme-142
+```
+
+```text
+claude  1828c499-…
+DIS-1725 ledger planner stats
+~/…/dis-1725-ledger-planner-stats
+title: traycer
+started on: dis-1725-ledger-planner-stats
+branches: dis-1725-ledger-planner-stats (push), dis-1725-ledger-planner-stats (start)
+traycer: agent_title=… epic_title=BACKFILL kind=agent workspace=…
+```
+
+`started on` is the branch the provider recorded at launch; `branches` is every branch the
+session touched, with how each was seen. A `Name` column marks a title someone chose —
+`renamed` for a person's `/rename`, or the annotator that supplied it — so a title is
+distinguishable from a first prompt at a glance.
+
 Keys:
 
 - Type a query and press `Enter` to search.

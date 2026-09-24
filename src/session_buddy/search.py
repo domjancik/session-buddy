@@ -125,6 +125,7 @@ class SearchEngine:
                     cwd=row["cwd"],
                     updated_at=row["updated_at"],
                     git_branch=row["git_branch"],
+                    title_source=row["title_source"],
                     score=score,
                     fts_score=candidate.fts_score,
                     fuzzy_score=candidate.fuzzy_score,

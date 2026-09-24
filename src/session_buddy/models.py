@@ -45,6 +45,7 @@ class SearchResult:
     cwd: str
     updated_at: int | None
     git_branch: str
+    title_source: str
     score: float
     fts_score: float
     fuzzy_score: float
