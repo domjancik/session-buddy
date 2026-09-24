@@ -9,6 +9,7 @@ from .database import IndexDatabase
 from .indexer import check_index_freshness, index_all
 from .parsers import default_opencode_home, default_pi_home
 from .resume import load_resume_command, prepare_resume_command, run_resume
+from .details import detail_lines
 from .search import format_result_line, search_sessions
 from .text import format_time
 from .tmux import build_tmux_pane_command, open_tmux_pane, run_command_in_new_tmux_session_if_available
@@ -129,6 +130,16 @@ def build_parser() -> argparse.ArgumentParser:
     tui_parser.add_argument("query", nargs="?", default="")
     tui_parser.add_argument("--provider", choices=["claude", "codex", "opencode", "pi"])
     tui_parser.add_argument("--cwd", help="Only show sessions whose cwd contains this text.")
+    tui_parser.add_argument(
+        "--ext",
+        action="append",
+        metavar="SOURCE[.KEY][=VALUE]",
+        help="Filter on annotator metadata, e.g. --ext traycer.epic_title=Payments.",
+    )
+    tui_parser.add_argument(
+        "--branch",
+        help="Only sessions that touched this branch (substring or * glob), not just started on it.",
+    )
     tui_parser.add_argument("--auto-index", action="store_true", help="Update stale index sources before opening the TUI.")
     tui_parser.add_argument("--no-tmux", action="store_true", help="Do not auto-start the TUI inside tmux.")
     add_source_args(tui_parser)
@@ -213,8 +224,10 @@ def cmd_search(args: argparse.Namespace) -> int:
         provider=args.provider,
         cwd=args.cwd,
         semantic=not args.no_semantic,
-        ext=args.ext,
-        branch=args.branch,
+        # getattr, like cmd_search's show_ext: the parser always supplies these, and a
+        # caller that builds its own namespace should not break on a new filter.
+        ext=getattr(args, "ext", None),
+        branch=getattr(args, "branch", None),
     )
     for index, result in enumerate(results, start=1):
         print(format_result_line(index, result))
@@ -227,15 +240,8 @@ def cmd_search(args: argparse.Namespace) -> int:
         if getattr(args, "show_ext", False) or getattr(args, "branch", None):
             db = IndexDatabase(args.db)
             try:
-                refs = db.branches_for(result.provider, result.session_id)
-                if refs:
-                    rendered = ", ".join(
-                        f"{ref.branch} ({ref.evidence})" for ref in refs
-                    )
-                    print(f"    branches: {rendered}")
-                for source, pairs in db.annotations_for(result.provider, result.session_id).items():
-                    rendered = " ".join(f"{k}={v}" for k, v in pairs.items())
-                    print(f"    {source}: {rendered}")
+                for line in detail_lines(db, result.provider, result.session_id):
+                    print(f"    {line}")
             finally:
                 db.close()
         for snippet in result.snippets[:2]:
@@ -251,7 +257,17 @@ def cmd_tui(args: argparse.Namespace) -> int:
             return returncode
 
     freshness_message = handle_freshness_for_process(args, auto_index=wants_auto_index(args), semantic=True)
-    run_tui(args.db, args.query, provider=args.provider, cwd_filter=args.cwd, index_status=freshness_message)
+    run_tui(
+        args.db,
+        args.query,
+        provider=args.provider,
+        cwd_filter=args.cwd,
+        # getattr, like cmd_search's show_ext: the parser always supplies these, and a
+        # caller that builds its own namespace should not break on a new filter.
+        ext=getattr(args, "ext", None),
+        branch=getattr(args, "branch", None),
+        index_status=freshness_message,
+    )
     return 0
 
 

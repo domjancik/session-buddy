@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -7,6 +8,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header, Input, Static
 
+from .database import IndexDatabase
 from .models import SearchResult
 from .resume import (
     ResumeCommand,
@@ -15,6 +17,7 @@ from .resume import (
     run_prepared_resume,
     run_restore_worktree,
 )
+from .details import detail_lines, title_origin
 from .search import search_sessions
 from .text import format_time, truncate
 from .tmux import open_tmux_pane
@@ -40,9 +43,21 @@ def run_tui(
     initial_query: str = "",
     provider: str | None = None,
     cwd_filter: str | None = None,
+    ext: list[str] | None = None,
+    branch: str | None = None,
     index_status: str = "",
 ) -> None:
-    app = SessionSearchApp(db_path, initial_query, provider, cwd_filter, index_status)
+    # Keywords, not positions: this call silently mis-assigned index_status into a new
+    # parameter when the filters were added.
+    app = SessionSearchApp(
+        db_path,
+        initial_query,
+        provider=provider,
+        cwd_filter=cwd_filter,
+        ext=ext,
+        branch=branch,
+        index_status=index_status,
+    )
     command = app.run()
     if command is not None:
         prepared = prepare_resume_command(command)
@@ -105,6 +120,8 @@ class SessionSearchApp(App[ResumeCommand | None]):
         initial_query: str = "",
         provider: str | None = None,
         cwd_filter: str | None = None,
+        ext: list[str] | None = None,
+        branch: str | None = None,
         index_status: str = "",
     ) -> None:
         super().__init__()
@@ -112,6 +129,8 @@ class SessionSearchApp(App[ResumeCommand | None]):
         self.initial_query = initial_query
         self.provider = provider
         self.cwd_filter = cwd_filter
+        self.ext = ext
+        self.branch = branch
         self.index_status = index_status
         self.results: list[SearchResult] = []
         self.selected_index = 0
@@ -131,7 +150,7 @@ class SessionSearchApp(App[ResumeCommand | None]):
         table = self.results_table
         table.cursor_type = "row"
         table.zebra_stripes = True
-        table.add_columns("#", "Provider", "Score", "Updated", "Title", "Folder")
+        table.add_columns("#", "Provider", "Score", "Updated", "Title", "Name", "Folder")
         if self.initial_query:
             self.run_search(self.initial_query)
         self.query_one("#query", Input).focus()
@@ -175,6 +194,8 @@ class SessionSearchApp(App[ResumeCommand | None]):
             limit=50,
             provider=self.provider,
             cwd=self.cwd_filter,
+            ext=self.ext,
+            branch=self.branch,
         )
         self.selected_index = 0
         self.populate_results()
@@ -191,6 +212,7 @@ class SessionSearchApp(App[ResumeCommand | None]):
                 f"{result.score:0.3f}",
                 format_time(result.updated_at),
                 truncate(result.title, 80),
+                title_origin(result.title_source),
                 truncate(result.cwd, 90),
                 key=f"{result.provider}:{result.session_id}",
             )
@@ -212,11 +234,27 @@ class SessionSearchApp(App[ResumeCommand | None]):
             result.title,
             result.cwd,
         ]
+        origin = title_origin(result.title_source)
+        if origin:
+            parts.append(f"title: {origin}")
         if result.git_branch:
-            parts.append(f"branch: {result.git_branch}")
+            # Labelled `started on` deliberately: the session may have created or pushed
+            # others, and the `branches:` line below is the one that shows those.
+            parts.append(f"started on: {result.git_branch}")
+        parts.extend(self.detail_lines_for(result))
         parts.append("")
         parts.extend(result.snippets or ["No snippets available."])
         panel.update("\n".join(parts))
+
+    def detail_lines_for(self, result: SearchResult) -> list[str]:
+        """Branches and annotator metadata, rendered exactly as the CLI renders them."""
+        db = IndexDatabase(self.db_path)
+        try:
+            return detail_lines(db, result.provider, result.session_id)
+        except sqlite3.Error:
+            return []  # a detail we cannot read must not blank the preview
+        finally:
+            db.close()
 
     def action_toggle_preview(self) -> None:
         self.preview_visible = not self.preview_visible
