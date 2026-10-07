@@ -453,6 +453,9 @@ class IndexDatabase:
         self.conn.execute("delete from session_fts where provider = ? and session_id = ?", (provider, session_id))
         self.conn.execute("delete from embeddings where provider = ? and session_id = ?", (provider, session_id))
         self.conn.execute("delete from messages where provider = ? and session_id = ?", (provider, session_id))
+        # Branches were left behind, so a pruned session kept its rows and `--branch` matched
+        # a session no query could then join to. Measured: 324 orphans of 1,648 rows.
+        self.conn.execute("delete from session_branches where provider = ? and session_id = ?", (provider, session_id))
         self.conn.execute("delete from sessions where provider = ? and session_id = ?", (provider, session_id))
 
     def mark_seen_sources(self, seen_paths: set[str], prune: bool = False) -> int:

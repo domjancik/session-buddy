@@ -105,8 +105,9 @@ pass vs. round two — rather than listing them flat.
   session. Do not filter to one provider unless asked.
 - **Raw hit counts mislead.** The session mentioning a ticket most often is usually the
   coordinating session, not the one that did the work. Trust the score and the excerpts.
-- **Subagent transcripts are indexed too**, under `<session>/subagents/agent-*.jsonl`. The real
-  work often lives there while the parent holds only the handoff message.
+- **Subagent transcripts are indexed too**, under `<session>/subagents/agent-*.jsonl`, with an
+  id of `<parent>/<agent file>`. The real work often lives there while the parent holds only
+  the handoff message. `resume` on one addresses the parent, which is the resumable session.
 - **The branch a session started on is not the branch it worked on.** `--branch` covers
   branches created, pushed or checked out mid-session; the `branches:` line under each hit
   shows how each was seen. Do not conclude a branch is unused from a query against one

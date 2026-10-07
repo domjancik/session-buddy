@@ -49,7 +49,9 @@ def build_resume_command(
             argv.extend(["-C", cwd])
         argv.append(session_id)
     elif provider == "claude":
-        argv = ["claude", "--resume", session_id]
+        # A subagent id is `<parent>/<agent file>`; only the parent is resumable, and
+        # resuming it is what someone reading a subagent's transcript actually wants.
+        argv = ["claude", "--resume", session_id.split("/", 1)[0]]
     elif provider == "opencode":
         # `opencode --session <id>` (alias -s), started in the session's directory.
         argv = ["opencode", "--session", session_id]
