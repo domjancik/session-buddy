@@ -38,6 +38,10 @@ def load_claude_indexes(claude_home: Path) -> tuple[dict[str, dict[str, Any]], d
     return entries, project_paths
 
 
+SUBAGENT_SEPARATOR = "/"
+"""Joins a parent session id to its subagent file stem. `/` cannot occur in either."""
+
+
 def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path: str | None) -> SessionRecord | None:
     stat = path.stat()
     session_id = path.stem
@@ -111,6 +115,15 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
 
     if not session_id:
         return None
+
+    # A subagent transcript records its PARENT's sessionId, and lives at
+    # `<parent>/subagents/agent-*.jsonl`. Keyed on that id it is not a second session, it is
+    # the same one: upsert deletes and reinserts, so every subagent overwrote the parent and
+    # each other, and whichever file was scanned last was all that survived. Measured on one
+    # machine: 91 subagent transcripts, up to 24 collapsing onto a single id, several over a
+    # megabyte, none of them searchable. Give each its own id so they coexist.
+    if path.parent.name == "subagents":
+        session_id = f"{session_id}{SUBAGENT_SEPARATOR}{path.stem}"
 
     # A launcher can set the title too (Traycer starts Claude with `--name`), and it writes
     # the same record a person's /rename does - measured, they are byte-identical bar the

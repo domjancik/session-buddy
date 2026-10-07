@@ -277,6 +277,61 @@ def first_workspace(value) -> str:
     return ""
 
 
+# Traycer has shipped two shapes of this table. `chat_projection` stored the whole chat as
+# one `projection_json` blob; `chat_projection_head` normalises it into columns and keeps
+# only the nested objects as json. A release upgrades the store in place, so both are read:
+# selecting the wrong one fails the whole store, which is how 72 of 72 went silently dark.
+CHAT_TABLES = ("chat_projection_head", "chat_projection")
+
+
+def read_chat_rows(conn: sqlite3.Connection) -> list[dict]:
+    """Every chat in this store, normalised to the nested shape the rest of the code uses."""
+    present = {
+        row[0]
+        for row in conn.execute("select name from sqlite_master where type = 'table'")
+    }
+    for table in CHAT_TABLES:
+        if table not in present:
+            continue
+        if table == "chat_projection":
+            rows = []
+            for (payload,) in conn.execute(f"select projection_json from {table}"):
+                try:
+                    rows.append(json.loads(payload or "{}"))
+                except json.JSONDecodeError:
+                    continue  # one malformed projection must not cost us the epic
+            return rows
+        conn.row_factory = sqlite3.Row
+        return [head_row_to_chat(row) for row in conn.execute(f"select * from {table}")]
+    return []
+
+
+def head_row_to_chat(row: sqlite3.Row) -> dict:
+    """Rebuild the nested chat record from the columnar `chat_projection_head` row."""
+
+    def nested(column: str) -> dict:
+        try:
+            value = json.loads(row[column] or "{}")
+        except (json.JSONDecodeError, IndexError, KeyError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    columns = row.keys()
+    return {
+        "chatId": row["chat_id"] if "chat_id" in columns else "",
+        "tenantKind": row["tenant_kind"] if "tenant_kind" in columns else "",
+        "parentChatId": row["parent_chat_id"] if "parent_chat_id" in columns else "",
+        "title": row["title"] if "title" in columns else "",
+        "updatedAt": row["updated_at"] if "updated_at" in columns else 0,
+        "tuiAgent": nested("tui_agent_json") or None,
+        "hostPrivate": nested("host_private_json"),
+        # The head table keeps messages in their own rows; the only one this reader wanted
+        # was each message's sessionAnchor, so a resumed GUI chat now contributes just its
+        # live session rather than its earlier ones.
+        "messages": [],
+    }
+
+
 def read_chat_store(db_path: Path, epic_id: str, epic_title: str) -> dict:
     """Read one epic's chat.db into the same record shape the Yjs seeds produce.
 
@@ -287,17 +342,13 @@ def read_chat_store(db_path: Path, epic_id: str, epic_title: str) -> dict:
     """
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        rows = conn.execute("select projection_json from chat_projection").fetchall()
+        rows = read_chat_rows(conn)
     finally:
         conn.close()
 
     bindings: list[dict] = []
     updated_at = 0
-    for (payload,) in rows:
-        try:
-            chat = json.loads(payload or "{}")
-        except json.JSONDecodeError:
-            continue  # one malformed projection must not cost us the epic
+    for chat in rows:
         if not isinstance(chat, dict):
             continue
         updated_at = max(updated_at, int(chat.get("updatedAt") or 0))
