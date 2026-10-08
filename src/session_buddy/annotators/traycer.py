@@ -54,6 +54,11 @@ TITLE_PRIORITY = 10
 
 # Only the epic record carries an epic title; the chat store knows its epic by directory name.
 CHAT_STORE = "host/epic-state"
+# A third store. Epic titles have migrated out of the Yjs seeds into a host-level database,
+# so a seed that decodes with no `title` key is not an untitled epic - its name lives here.
+# Measured: 26 of 118 epics had no title from the seeds, and 11 of those are named in this
+# one, with zero disagreements where both have a name.
+EPIC_HOMES = "host/epic-homes/epic-homes.db"
 
 
 class TraycerAnnotator:
@@ -74,7 +79,7 @@ class TraycerAnnotator:
         result = AnnotatorResult()
         warnings: list[str] = []
 
-        epic_titles: dict[str, str] = {}
+        epic_titles: dict[str, str] = read_epic_homes(root / EPIC_HOMES)
         grouped: set[str] = set()
 
         warnings += self.collect_seeds(root, result, epic_titles, grouped)
@@ -113,6 +118,8 @@ class TraycerAnnotator:
                 continue
             if record["title"]:
                 epic_titles[record["id"]] = record["title"]
+            elif epic_titles.get(record["id"]):
+                record["title"] = epic_titles[record["id"]]
             self.emit_epic(result, record, grouped)
         return [f"traycer: {failed} epic seed(s) could not be decoded"] if failed else []
 
@@ -167,6 +174,9 @@ class TraycerAnnotator:
                 f"{binding['kind']}_id": binding["id"],
                 f"{binding['kind']}_title": binding["title"],
                 "parent_id": binding["parent_id"],
+                # The id alone cannot be acted on: a chat under a coordinator is opened by
+                # the PARENT's name, and resolving it meant walking the store by hand.
+                "parent_title": record.get("titles_by_id", {}).get(binding["parent_id"], ""),
                 "workspace": binding["workspace"],
             }
             for key, value in pairs.items():
@@ -203,6 +213,7 @@ class TraycerAnnotator:
                 "title": str(epic["title"] or ""),
                 "updated_at": int(epic["updatedAt"]) if "updatedAt" in keys and epic["updatedAt"] else 0,
                 "bindings": bindings,
+                "titles_by_id": {b["id"]: b["title"] for b in bindings if b["id"] and b["title"]},
             }
         return None
 
@@ -284,6 +295,37 @@ def first_workspace(value) -> str:
 CHAT_TABLES = ("chat_projection_head", "chat_projection")
 
 
+def read_epic_homes(db_path: Path) -> dict[str, str]:
+    """Epic id to title, from the host-level epic database.
+
+    `local_epic.list_projection_json` is the record the epic list renders from; its `title`
+    is what someone searches Traycer by. Failures are silent: this is a supplementary source
+    and an epic with no name here simply keeps whatever its seed gave it.
+    """
+    if not db_path.is_file():
+        return {}
+    titles: dict[str, str] = {}
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return {}
+    try:
+        rows = conn.execute("select epic_id, list_projection_json from local_epic").fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    for epic_id, payload in rows:
+        try:
+            projection = json.loads(payload or "{}")
+        except json.JSONDecodeError:
+            continue
+        title = str(projection.get("title") or "").strip() if isinstance(projection, dict) else ""
+        if epic_id and title:
+            titles[str(epic_id)] = title
+    return titles
+
+
 def read_chat_rows(conn: sqlite3.Connection) -> list[dict]:
     """Every chat in this store, normalised to the nested shape the rest of the code uses."""
     present = {
@@ -347,11 +389,19 @@ def read_chat_store(db_path: Path, epic_id: str, epic_title: str) -> dict:
         conn.close()
 
     bindings: list[dict] = []
+    titles_by_chat: dict[str, str] = {}
     updated_at = 0
     for chat in rows:
         if not isinstance(chat, dict):
             continue
         updated_at = max(updated_at, int(chat.get("updatedAt") or 0))
+        chat_id = str(chat.get("chatId") or "")
+        chat_title = str(chat.get("title") or "").strip()
+        if chat_id and chat_title:
+            # Keyed by chat id as well as binding id: a parent is referenced by its CHAT id
+            # even when its own binding is keyed by the agent id inside it.
+            titles_by_chat[chat_id] = chat_title
+
         agent = chat.get("tuiAgent")
         if isinstance(agent, dict):
             bindings.append(
@@ -371,7 +421,15 @@ def read_chat_store(db_path: Path, epic_id: str, epic_title: str) -> dict:
             )
             continue
         bindings.extend(read_gui_chat(chat))
-    return {"id": epic_id, "title": epic_title, "updated_at": updated_at, "bindings": bindings}
+    titles_by_id = {b["id"]: b["title"] for b in bindings if b["id"] and b["title"]}
+    titles_by_id.update(titles_by_chat)
+    return {
+        "id": epic_id,
+        "title": epic_title,
+        "updated_at": updated_at,
+        "bindings": bindings,
+        "titles_by_id": titles_by_id,
+    }
 
 
 def read_gui_chat(chat: dict) -> list[dict]:
