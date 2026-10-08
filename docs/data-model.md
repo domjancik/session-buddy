@@ -314,6 +314,30 @@ The bonus applies only to a title something *chose* (`titled`): a person's renam
 name, or an annotator's. A title derived from the first prompt does not earn it, or the first
 prompt would be scored twice, once as the title and once as its own text.
 
+## Traycer keeps its records in three places
+
+Each was found only after a lookup returned something that looked like an answer and was not.
+
+| store | holds |
+| --- | --- |
+| `~/.traycer/epics/<id>/seeds/*.bin` | Yjs epic records; `tuiAgents[]` and `chats[]` bindings |
+| `~/.traycer/host/epic-state/<epic>/chat/chat.db` | per-epic chats, both tenant kinds, with their harness bindings |
+| `~/.traycer/host/epic-homes/epic-homes.db` | **epic titles**, in `local_epic.list_projection_json` |
+
+Epic titles have migrated out of the seeds. Measured: 26 of 118 epics decoded with no `title`
+key, and 11 of those are named in `epic-homes.db` — including every epic in daily use — with
+**zero disagreements** where both sources have a name. So a seed that decodes cleanly with no
+title is not an unnamed epic; it is an epic whose name lives elsewhere.
+
+The rule each time has been the same: *absence in the store you know is not absence.*
+
+### Naming the parent
+
+A chat under a coordinator is opened by the **parent's** name, so `parent_title` is recorded
+alongside `parent_id`. The lookup is keyed by chat id as well as binding id, because a terminal
+agent's binding is keyed by the agent id inside it while a child references its chat id — the
+two namespaces meet only here.
+
 ## Non-goals
 
 - **No cross-tool group table.** Epics, swarms and projects are not the same thing.

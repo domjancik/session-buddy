@@ -159,3 +159,94 @@ def test_deleting_a_session_takes_its_branches(tmp_path):
         assert db.conn.execute("select count(*) from session_branches").fetchone()[0] == 0
     finally:
         db.close()
+
+
+# --- epic titles and parent names ----------------------------------------------------------
+
+def epic_homes(path: Path, rows: list[tuple[str, dict]]) -> Path:
+    """The host-level epic database, where epic titles now live."""
+    db = path / "epic-homes.db"
+    conn = sqlite3.connect(db)
+    conn.execute("create table local_epic (epic_id text, list_projection_json text)")
+    conn.executemany("insert into local_epic values (?,?)",
+                     [(eid, json.dumps(proj)) for eid, proj in rows])
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_an_epic_title_is_read_from_epic_homes(tmp_path):
+    """Titles migrated out of the Yjs seeds; a seed with no title is not an unnamed epic."""
+    from session_buddy.annotators.traycer import read_epic_homes
+
+    db = epic_homes(tmp_path, [("epic-9", {"id": "epic-9", "title": "SEC", "ticketCount": 3})])
+
+    assert read_epic_homes(db) == {"epic-9": "SEC"}
+
+
+def test_epic_homes_tolerates_a_missing_or_broken_database(tmp_path):
+    from session_buddy.annotators.traycer import read_epic_homes
+
+    assert read_epic_homes(tmp_path / "absent.db") == {}
+
+    broken = tmp_path / "broken.db"
+    broken.write_bytes(b"not a database")
+    assert read_epic_homes(broken) == {}
+
+
+def test_a_blank_epic_title_is_filled_from_epic_homes(tmp_path):
+    """End to end: the annotation a search shows must carry the name, not an empty string."""
+    from session_buddy.annotators.traycer import TraycerAnnotator
+
+    home = tmp_path / "traycer"
+    (home / "host" / "epic-homes").mkdir(parents=True)
+    epic_homes(home / "host" / "epic-homes", [("epic-9", {"title": "SEC"})])
+    store = home / "host" / "epic-state" / "epic-9" / "chat"
+    store.mkdir(parents=True)
+    head_store(store)
+
+    result = TraycerAnnotator().collect(home)
+
+    titles = {(a.session_id, a.key): a.value for a in result.annotations}
+    assert titles[("session-9", "epic_title")] == "SEC"
+    assert [g["title"] for g in result.groups] == ["SEC"]
+
+
+def test_a_child_chat_names_its_parent(tmp_path):
+    """`parent_id` alone cannot be opened; the parent's NAME is what you search Traycer by."""
+    from session_buddy.annotators.traycer import read_chat_store
+
+    db = tmp_path / "chat.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "create table chat_projection_head (chat_id text, tenant_kind text, parent_chat_id text,"
+        " title text, updated_at int, tui_agent_json text, host_private_json text)"
+    )
+    conn.execute("insert into chat_projection_head values ('parent-1','tui-agent',NULL,?,2,?,?)",
+                 ("Worktree Agent Coordination Protocol", json.dumps({**AGENT, "id": "agent-p",
+                  "harnessSessionId": "session-parent"}), json.dumps({"data": {}})))
+    conn.execute("insert into chat_projection_head values ('child-1','chat','parent-1',?,3,NULL,?)",
+                 ("DIS-1976 tier-1 ignore fix",
+                  json.dumps({"data": {"activeSessionChain": CHAIN}})))
+    conn.commit()
+    conn.close()
+
+    record = read_chat_store(db, "epic-9", "SEC")
+
+    child = next(b for b in record["bindings"] if b["session_id"] == "session-gui")
+    assert child["parent_id"] == "parent-1"
+    # the parent's binding is keyed by its AGENT id, while the child references its CHAT id
+    assert record["titles_by_id"]["parent-1"] == "Worktree Agent Coordination Protocol"
+
+    # and the name has to reach the annotations, not just the lookup table: asserting the
+    # map alone passed while emit_epic wrote an empty parent_title.
+    from session_buddy.annotators.traycer import TraycerAnnotator
+
+    home = db.parent / "traycer"
+    store = home / "host" / "epic-state" / "epic-9" / "chat"
+    store.mkdir(parents=True)
+    (store / "chat.db").write_bytes(db.read_bytes())
+    emitted = {
+        (a.session_id, a.key): a.value for a in TraycerAnnotator().collect(home).annotations
+    }
+    assert emitted[("session-gui", "parent_title")] == "Worktree Agent Coordination Protocol"
