@@ -225,6 +225,27 @@ sb groups                                     # list epics: id, session count, t
 Without the extra installed, or with no such tool on the machine, everything above is simply
 absent — indexing and search are unaffected.
 
+## Sessions Without a Transcript
+
+An orchestrator records a session when it starts it; the provider writes the transcript. When
+the second never happens, the annotation is the only record that work happened — and every
+search joins through the session table, so nothing shows it. Measured on one machine: **253 of
+557 annotated sessions**, 243 of them with a usable title, one of them the author of a PR
+nobody could otherwise attribute.
+
+```sh
+sb agents                              # every session an annotator knows
+sb agents --missing                    # only those with no transcript
+sb agents --epic BACKFILL --missing    # scoped to one epic
+```
+
+```text
+claude   849dc057  DIS-1432 tier/force labels   epic=TEMPORAL FIXES  parent=Debug Grafana…  [no transcript]
+```
+
+These cannot be searched or resumed. The name, epic and parent are enough to find the work by
+other means, which is the point of showing them.
+
 ## Index Status
 
 ```sh

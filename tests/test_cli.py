@@ -171,3 +171,51 @@ def test_auto_index_defaults_off() -> None:
     parser = build_parser()
 
     assert wants_auto_index(parser.parse_args(["search", "gate"])) is False
+
+
+def test_cmd_agents_marks_the_unreachable(tmp_path, capsys):
+    """The CLI has to SAY a session has no transcript; the row alone is not the point."""
+    from session_buddy.cli import cmd_agents
+    from session_buddy.database import IndexDatabase
+    from session_buddy.models import Annotation
+
+    db_path = tmp_path / "index.sqlite"
+    db = IndexDatabase(db_path)
+    try:
+        db.replace_annotations("traycer", [
+            Annotation("claude", "ghost", "traycer", "agent_title", "DIS-1432 tier/force labels"),
+            Annotation("claude", "ghost", "traycer", "epic_title", "TEMPORAL FIXES"),
+        ])
+    finally:
+        db.close()
+
+    code = cmd_agents(argparse.Namespace(db=db_path, epic=None, missing=False))
+
+    out, err = capsys.readouterr()
+    assert code == 0
+    assert "DIS-1432 tier/force labels" in out
+    assert "[no transcript]" in out
+    assert "epic=TEMPORAL FIXES" in out
+    assert "1 of 1 have no transcript" in err
+
+
+def test_cmd_agents_reports_an_empty_match(tmp_path, capsys):
+    from session_buddy.cli import cmd_agents
+    from session_buddy.database import IndexDatabase
+
+    db_path = tmp_path / "index.sqlite"
+    IndexDatabase(db_path).close()
+
+    code = cmd_agents(argparse.Namespace(db=db_path, epic=None, missing=False))
+
+    assert code == 1
+    assert "No annotated sessions match." in capsys.readouterr().err
+
+
+def test_agents_is_a_known_subcommand():
+    from session_buddy.cli import build_parser
+
+    args = build_parser().parse_args(["agents", "--epic", "BACKFILL", "--missing"])
+
+    assert args.epic == "BACKFILL"
+    assert args.missing is True
