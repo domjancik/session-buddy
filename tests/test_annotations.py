@@ -215,3 +215,52 @@ def test_replacing_groups_drops_the_previous_set(db):
     db.replace_groups("traycer", [{"id": "kept", "title": "Kept", "updated_at": "2", "key": "epic_id"}])
 
     assert [g["id"] for g in db.list_groups()] == ["kept"]
+
+
+def test_annotated_sessions_include_ones_with_no_transcript(db):
+    """Every other read joins through `sessions`, which hides a session that never wrote one."""
+    db.replace_annotations("traycer", [
+        Annotation("claude", "s1", "traycer", "agent_title", "Indexed session"),
+        Annotation("claude", "ghost", "traycer", "agent_title", "DIS-1432 tier/force labels"),
+        Annotation("claude", "ghost", "traycer", "epic_title", "TEMPORAL FIXES"),
+        Annotation("claude", "ghost", "traycer", "parent_title", "Debug Grafana Enrichment Failure"),
+    ])
+
+    rows = {r["session_id"]: r for r in db.list_annotated_sessions()}
+
+    assert rows["s1"]["indexed"] == 1
+    ghost = rows["ghost"]
+    assert ghost["indexed"] == 0
+    assert ghost["title"] == "DIS-1432 tier/force labels"
+    assert ghost["epic"] == "TEMPORAL FIXES"
+    assert ghost["parent"] == "Debug Grafana Enrichment Failure"
+
+
+def test_missing_only_keeps_just_the_unreachable(db):
+    db.replace_annotations("traycer", [
+        Annotation("claude", "s1", "traycer", "agent_title", "Indexed"),
+        Annotation("claude", "ghost", "traycer", "agent_title", "Transcript-less"),
+    ])
+
+    rows = db.list_annotated_sessions(missing_only=True)
+
+    assert [r["session_id"] for r in rows] == ["ghost"]
+
+
+def test_epic_filter_is_a_case_insensitive_substring(db):
+    db.replace_annotations("traycer", [
+        Annotation("claude", "a", "traycer", "epic_title", "BACKFILL"),
+        Annotation("claude", "b", "traycer", "epic_title", "Order Linking Backfill Audit"),
+        Annotation("claude", "c", "traycer", "epic_title", "TEMPORAL FIXES"),
+    ])
+
+    found = {r["session_id"] for r in db.list_annotated_sessions(epic="backfill")}
+
+    assert found == {"a", "b"}
+
+
+def test_a_session_with_no_annotations_is_absent(db):
+    """The listing is of what an annotator knows, so an un-orchestrated session is not in it."""
+    db.replace_annotations("traycer", [])
+
+    assert db.list_annotated_sessions() == []

@@ -114,3 +114,8 @@ pass vs. round two — rather than listing them flat.
   session's starting branch.
 - **Interactive TUI use leaves no transcript.** A missing session proves nothing about whether
   the user did that work by hand.
+- **Some sessions exist only as annotations.** An orchestrator recorded them, the provider
+  never wrote a transcript, and every search joins through the session table — so they are
+  invisible to `search` while still being the only record of who did the work. `sb agents
+  --missing` lists them with name, epic and parent. Reach for it when a branch or PR has no
+  owner in search results.

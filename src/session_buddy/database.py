@@ -235,6 +235,42 @@ class IndexDatabase:
                     applied += cur.rowcount
         return applied
 
+    def list_annotated_sessions(
+        self, epic: str | None = None, missing_only: bool = False
+    ) -> list[dict]:
+        """Sessions an annotator knows about, including ones with no transcript.
+
+        Every other read joins through `sessions`, so a session an orchestrator recorded but
+        whose transcript was never written is invisible: 253 of them on one machine, 243 with
+        a usable title, and one of those was the author of a PR nobody could attribute. The
+        annotation is the only record that work happened, so it gets a way out of the database.
+        """
+        rows = self.conn.execute(
+            """
+            select a.provider, a.session_id,
+                   max(case when a.key in ('agent_title', 'chat_title') then a.value end) as title,
+                   max(case when a.key = 'epic_title' then a.value end) as epic,
+                   max(case when a.key = 'parent_title' then a.value end) as parent,
+                   max(case when a.key = 'workspace' then a.value end) as workspace,
+                   (s.session_id is not null) as indexed,
+                   s.updated_at as updated_at
+            from annotations a
+            left join sessions s
+              on s.provider = a.provider and s.session_id = a.session_id
+            group by a.provider, a.session_id
+            order by coalesce(s.updated_at, 0) desc, title
+            """
+        ).fetchall()
+        out = []
+        for row in rows:
+            record = dict(row)
+            if missing_only and record["indexed"]:
+                continue
+            if epic and epic.lower() not in (record["epic"] or "").lower():
+                continue
+            out.append(record)
+        return out
+
     def replace_groups(self, source: str, groups: list[dict[str, str]]) -> int:
         """Persist an annotator's containers so `groups` reads the index, not the live store."""
         with self.conn:

@@ -11,14 +11,14 @@ from .parsers import default_opencode_home, default_pi_home
 from .resume import load_resume_command, prepare_resume_command, run_resume
 from .details import detail_lines
 from .search import format_result_line, search_sessions
-from .text import format_time
+from .text import format_time, truncate
 from .tmux import build_tmux_pane_command, open_tmux_pane, run_command_in_new_tmux_session_if_available
 from .tui import run_tui
 
 
 DEFAULT_DB = Path.home() / ".session-buddy" / "index.sqlite"
 
-SUBCOMMANDS = ("index", "search", "tui", "status", "resume", "groups")
+SUBCOMMANDS = ("index", "search", "tui", "status", "resume", "groups", "agents")
 
 
 def default_db_path() -> Path:
@@ -125,6 +125,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_source_args(search_parser)
     search_parser.set_defaults(func=cmd_search)
+
+    agents_parser = subparsers.add_parser(
+        "agents", help="List sessions an orchestrator knows about, transcript or not."
+    )
+    agents_parser.add_argument("--epic", help="Only sessions whose epic title contains this text.")
+    agents_parser.add_argument(
+        "--missing",
+        action="store_true",
+        help="Only sessions with no transcript, which no search or resume can reach.",
+    )
+    agents_parser.set_defaults(func=cmd_agents)
 
     tui_parser = subparsers.add_parser("tui", help="Open the terminal search UI.")
     tui_parser.add_argument("query", nargs="?", default="")
@@ -268,6 +279,37 @@ def cmd_tui(args: argparse.Namespace) -> int:
         branch=getattr(args, "branch", None),
         index_status=freshness_message,
     )
+    return 0
+
+
+def cmd_agents(args: argparse.Namespace) -> int:
+    db = IndexDatabase(args.db)
+    try:
+        rows = db.list_annotated_sessions(epic=args.epic, missing_only=args.missing)
+    finally:
+        db.close()
+    if not rows:
+        print("No annotated sessions match.", file=sys.stderr)
+        return 1
+    for row in rows:
+        title = truncate(row["title"] or row["session_id"], 46)
+        parts = [f"{row['provider']:<8} {row['session_id'][:8]}  {title:<46}"]
+        if row["epic"]:
+            parts.append(f"epic={row['epic']}")
+        if row["parent"]:
+            parts.append(f"parent={row['parent']}")
+        if not row["indexed"]:
+            # The annotation is the only record this session ever ran.
+            parts.append("[no transcript]")
+        print("  ".join(parts))
+    missing = sum(1 for row in rows if not row["indexed"])
+    if missing:
+        print(
+            f"\n{missing} of {len(rows)} have no transcript on this machine: "
+            "the orchestrator recorded them, the provider never wrote one, so they cannot be "
+            "searched or resumed.",
+            file=sys.stderr,
+        )
     return 0
 
 
