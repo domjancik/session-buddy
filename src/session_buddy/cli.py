@@ -119,6 +119,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-ext", action="store_true", help="Print annotator metadata under each result."
     )
     search_parser.add_argument(
+        "--since", metavar="YYYY-MM-DD", help="Only sessions updated on or after this day (UTC)."
+    )
+    search_parser.add_argument(
+        "--until", metavar="YYYY-MM-DD", help="Only sessions updated on or before this day (UTC)."
+    )
+    search_parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="SESSION_ID",
+        help="Drop a session from the results. Pass your own id when searching your own topic.",
+    )
+    search_parser.add_argument(
         "--branch",
         help="Only sessions that touched this branch (substring, or a glob with *). "
         "Covers branches created, pushed or checked out mid-session, not just the start branch.",
@@ -239,6 +251,9 @@ def cmd_search(args: argparse.Namespace) -> int:
         # caller that builds its own namespace should not break on a new filter.
         ext=getattr(args, "ext", None),
         branch=getattr(args, "branch", None),
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+        exclude=getattr(args, "exclude", None),
     )
     for index, result in enumerate(results, start=1):
         print(format_result_line(index, result))

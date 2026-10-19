@@ -261,7 +261,13 @@ sb "webhook retry"                    # a bare query means search
 sb search "webhook retry"             # explicit form
 sb "acme-mono" --provider codex --limit 20
 sb "routing" --auto-index
+sb "envoy gateway" --since 2026-06-01 --until 2026-06-01   # one UTC day, both ends inclusive
+sb "session buddy" --exclude <your-session-id>             # drop your own transcript
 ```
+
+Index timestamps are milliseconds. `datetime(updated_at, 'unixepoch')` on a millisecond value
+returns NULL instead of erroring, so a hand-written date filter reports no sessions and looks
+like an answer. `--since` and `--until` do the arithmetic.
 
 Search warns when the index is stale. Pass `--auto-index` to update changed sources and prune deleted index entries before searching.
 
