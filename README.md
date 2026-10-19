@@ -225,6 +225,36 @@ sb groups                                     # list epics: id, session count, t
 Without the extra installed, or with no such tool on the machine, everything above is simply
 absent — indexing and search are unaffected.
 
+## Who Owns a Branch
+
+A session that reads about work collects the branch names it quoted. A lookup agent that
+queried this index acquired 9 branch rows of which 8 were false, and this project's own
+development session carries 47, most of them test fixtures. A branch hit does not establish
+ownership.
+
+```sh
+sb owner dis-1725-ledger-planner-stats
+```
+
+```text
+claude  1828c499  DIS-1725 ledger planner stats   start,push,push-output  [in its worktree]
+```
+
+Evidence is ranked: `start`, `pr`, `push`, `worktree`, `checkout`, then `push-output`, which
+is the weakest because it is what quoting collects. A session running in the branch's own
+worktree ranks above all of them — it is the one signal here that is not text.
+
+Commands are quotable too; these patterns appear in this repository's own tests. When the
+candidates tie and none ran in the worktree, the command says so instead of choosing:
+
+```text
+2 candidates and none ran in the branch's worktree. Evidence is text either session could
+have quoted; confirm before naming an owner.
+```
+
+When every candidate only quoted the branch, the session that did the work probably left no
+transcript, and the output points at `sb agents --missing`.
+
 ## Sessions Without a Transcript
 
 An orchestrator records a session when it starts it; the provider writes the transcript. When

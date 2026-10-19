@@ -93,7 +93,7 @@ def test_the_preview_actually_renders_the_details(tmp_path, monkeypatch):
     app.refresh_preview()
 
     assert "branches:" in panel.text
-    assert "acme-142-pushed (push)" in panel.text
+    assert "acme-142-pushed (push-output)" in panel.text
     assert "traycer:" in panel.text
     assert "epic_title=Payments" in panel.text
     assert "started on: acme-142-start" in panel.text  # labelled, not called "branch"
@@ -109,7 +109,7 @@ def test_the_details_include_a_branch_the_session_did_not_start_on(tmp_path):
         db.close()
 
     branches = next(line for line in lines if line.startswith("branches:"))
-    assert "acme-142-pushed (push)" in branches
+    assert "acme-142-pushed (push-output)" in branches
     assert "acme-142-start (start)" in branches
 
 

@@ -18,7 +18,7 @@ from .tui import run_tui
 
 DEFAULT_DB = Path.home() / ".session-buddy" / "index.sqlite"
 
-SUBCOMMANDS = ("index", "search", "tui", "status", "resume", "groups", "agents")
+SUBCOMMANDS = ("index", "search", "tui", "status", "resume", "groups", "agents", "owner")
 
 
 def default_db_path() -> Path:
@@ -137,6 +137,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_source_args(search_parser)
     search_parser.set_defaults(func=cmd_search)
+
+    owner_parser = subparsers.add_parser(
+        "owner", help="Which session owns a branch, ranked by how firmly it can be said to."
+    )
+    owner_parser.add_argument("branch", help="Exact branch name.")
+    owner_parser.set_defaults(func=cmd_owner)
 
     agents_parser = subparsers.add_parser(
         "agents", help="List sessions an orchestrator knows about, transcript or not."
@@ -294,6 +300,49 @@ def cmd_tui(args: argparse.Namespace) -> int:
         branch=getattr(args, "branch", None),
         index_status=freshness_message,
     )
+    return 0
+
+
+def cmd_owner(args: argparse.Namespace) -> int:
+    db = IndexDatabase(args.db)
+    try:
+        rows = db.branch_owners(args.branch)
+    finally:
+        db.close()
+    if not rows:
+        print(f"No session touched {args.branch}.", file=sys.stderr)
+        print(
+            "If a PR exists for it, its author may have left no transcript: try "
+            "`sb agents --missing`.",
+            file=sys.stderr,
+        )
+        return 1
+    for row in rows:
+        marks = []
+        if row["in_worktree"]:
+            marks.append("in its worktree")
+        if row["quoted_only"]:
+            marks.append("quoted only")
+        suffix = f"  [{'; '.join(marks)}]" if marks else ""
+        title = truncate(row["title"] or row["session_id"], 42)
+        print(
+            f"{row['provider']:<8} {row['session_id'][:8]}  {title:<42} "
+            f"{','.join(row['evidence'])}{suffix}"
+        )
+    strong = [r for r in rows if not r["quoted_only"]]
+    if not strong:
+        print(
+            "\nEvery candidate only quoted this branch. The session that did the work "
+            "left no transcript; `sb agents --missing` may name it.",
+            file=sys.stderr,
+        )
+    elif len(strong) > 1 and not any(r["in_worktree"] for r in strong):
+        # Commands and output are both quotable, so a tie here is genuinely undecided.
+        print(
+            f"\n{len(strong)} candidates and none ran in the branch's worktree. Evidence is "
+            "text either session could have quoted; confirm before naming an owner.",
+            file=sys.stderr,
+        )
     return 0
 
 

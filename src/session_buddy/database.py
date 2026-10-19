@@ -235,6 +235,63 @@ class IndexDatabase:
                     applied += cur.rowcount
         return applied
 
+    def branch_owners(self, branch: str) -> list[dict]:
+        """Candidate owners of a branch, strongest evidence first.
+
+        A branch hit is not self-validating. A session that merely read about the work
+        collects `push-output` rows from the text it quoted, so the question "who owned this"
+        has to weigh HOW a session knows the name, not whether it does.
+        """
+        from .branches import EVIDENCE_STRENGTH
+
+        rows = self.conn.execute(
+            """
+            select b.provider, b.session_id, b.evidence, s.title, s.cwd, s.updated_at
+            from session_branches b
+            left join sessions s
+              on s.provider = b.provider and s.session_id = b.session_id
+            where b.branch = ?
+            """,
+            (branch,),
+        ).fetchall()
+        grouped: dict[tuple[str, str], dict] = {}
+        for row in rows:
+            key = (row["provider"], row["session_id"])
+            entry = grouped.setdefault(
+                key,
+                {
+                    "provider": row["provider"],
+                    "session_id": row["session_id"],
+                    "title": row["title"],
+                    "cwd": row["cwd"],
+                    "updated_at": row["updated_at"],
+                    "evidence": set(),
+                },
+            )
+            entry["evidence"].add(row["evidence"])
+        order = {name: rank for rank, name in enumerate(EVIDENCE_STRENGTH)}
+        out = []
+        for entry in grouped.values():
+            evidence = sorted(entry["evidence"], key=lambda e: order.get(e, 99))
+            entry["evidence"] = evidence
+            entry["best"] = evidence[0] if evidence else ""
+            # Only ever saw the name in text another session produced.
+            entry["quoted_only"] = evidence == ["push-output"]
+            out.append(entry)
+        for entry in out:
+            # A quoting session can reproduce any command or output; what it cannot do is run
+            # in the branch's own worktree. This is the one signal here that is not text.
+            cwd = (entry["cwd"] or "").lower()
+            entry["in_worktree"] = branch.lower() in cwd
+        out.sort(
+            key=lambda e: (
+                not e["in_worktree"],
+                order.get(e["best"], 99),
+                -(e["updated_at"] or 0),
+            )
+        )
+        return out
+
     def list_annotated_sessions(
         self, epic: str | None = None, missing_only: bool = False
     ) -> list[dict]:

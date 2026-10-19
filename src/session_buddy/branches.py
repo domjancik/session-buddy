@@ -19,8 +19,23 @@ Which patterns matter is a measurement, not a guess. Across a real index:
 session that motivated this, because branches usually arrive with a new worktree rather than
 a checkout in place. Push output and `worktree add` carry the signal.
 
-Evidence is stored alongside each branch. A name seen in push output is a strong claim; one
-seen in prose is not, which is why prose is not scanned at all.
+Evidence is stored alongside each branch, and the KIND matters because a transcript can
+quote another session's work. A lookup agent that queried this database and reported what it
+found acquired 9 branch rows of which 8 were false: it had never pushed anything. The
+development session for this tool carries 47, most of them test fixtures.
+
+So evidence is ranked rather than treated alike:
+
+    start        the provider recorded this session beginning on the branch
+    worktree     this session created a worktree for it
+    checkout     this session checked it out
+    pr           this session ran `gh pr create --head <branch>`
+    push         this session ran `git push ... origin <branch>`
+    push-output  push output appeared in this session's text
+
+`push-output` is the weakest: it is what a session quoting another session's work collects.
+A command is quotable too - these very patterns appear in this repository's tests - so the
+ranking informs judgement rather than deciding it. `sb owner <branch>` applies it.
 
 **These patterns run against text with no newlines.** A transcript message is flattened by
 `collapse_ws` before it is stored, so `re.M` with `^` anchors matches only at offset 0 of the
@@ -48,7 +63,7 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     #   ` * [new branch]      feature -> feature`
     #   ` + e418418...a26a7f2 feature -> feature (forced update)`
     (
-        "push",
+        "push-output",
         re.compile(
             rf"(?:\[new branch\]|\[deleted\]|{SHA}\.\.\.?{SHA})\s+"
             rf"({BRANCH})\s+->\s+({BRANCH})"
@@ -56,9 +71,10 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     # `branch 'x' set up to track 'origin/x'.` - emitted by push -u and by checkout, and the
     # only line that survives when a tool result is flattened.
-    ("push", re.compile(rf"branch '({BRANCH})' set up to track")),
+    ("push-output", re.compile(rf"branch '({BRANCH})' set up to track")),
     # explicit invocation against a named remote: `git push origin feature`
     ("push", re.compile(rf"git\s+push\s+(?:-{{1,2}}[A-Za-z-]+\s+)*(?:origin|upstream)\s+({BRANCH})")),
+    ("pr", re.compile(rf"gh\s+pr\s+create\s+(?:[^\n]*?)--head\s+({BRANCH})")),
     # `git worktree add -b feature ../wt` — the -b form names the branch unambiguously
     ("worktree", re.compile(rf"worktree\s+add\s+(?:-{{1,2}}[A-Za-z-]+\s+)*-b\s+({BRANCH})")),
     # `git worktree add ../wt feature` — branch is the trailing token after a path
@@ -70,6 +86,10 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # Real refs that say nothing about which work a session touched.
 # `main` is a real branch someone can work on, so it stays. Remotes and pseudo-refs go.
 IGNORED = {"head", "fetch_head", "orig_head", "origin", "upstream", "detached"}
+
+# Strongest first. A session's best evidence for a branch is how firmly it can be said to own
+# it; `push-output` alone is consistent with having merely read about the work.
+EVIDENCE_STRENGTH = ("start", "pr", "push", "worktree", "checkout", "push-output")
 MAX_BRANCH_LENGTH = 200
 SHA_ONLY = re.compile(r"^[0-9a-f]{7,40}$")
 

@@ -33,14 +33,14 @@ def test_the_start_branch_is_recorded():
 def test_push_output_new_branch():
     text = " * [new branch]      dis-1269-processable-amount-threshold -> dis-1269-processable-amount-threshold"
 
-    assert ("dis-1269-processable-amount-threshold", "push") in branches(record(text))
+    assert ("dis-1269-processable-amount-threshold", "push-output") in branches(record(text))
 
 
 def test_push_output_forced_update():
     """The shape that motivated the feature: the branch only appears in push output."""
     text = " + e4184182d3...a26a7f2368 dis-1269-processable-amount-threshold -> dis-1269-processable-amount-threshold (forced update)"
 
-    assert ("dis-1269-processable-amount-threshold", "push") in branches(record(text))
+    assert ("dis-1269-processable-amount-threshold", "push-output") in branches(record(text))
 
 
 def test_push_command_against_a_named_remote():
@@ -168,7 +168,7 @@ def test_push_output_is_found_without_a_line_start():
     """The real stored shape: one line, the marker preceded by the remote URL."""
     found = {(b.branch, b.evidence) for b in extract_branches(record(FLAT_PUSH))}
 
-    assert ("acme-142-retry", "push") in found
+    assert ("acme-142-retry", "push-output") in found
 
 
 def test_every_push_in_a_flattened_message_is_found():
@@ -184,7 +184,7 @@ def test_set_up_to_track_is_its_own_evidence():
 
     found = {(b.branch, b.evidence) for b in extract_branches(record(text))}
 
-    assert ("acme-144-only-tracked", "push") in found
+    assert ("acme-144-only-tracked", "push-output") in found
 
 
 def test_on_branch_is_found_mid_string():
