@@ -5,6 +5,7 @@ import math
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .database import IndexDatabase
@@ -53,10 +54,15 @@ def search_sessions(
     semantic: bool = True,
     ext: list[str] | None = None,
     branch: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    exclude: list[str] | None = None,
 ) -> list[SearchResult]:
     db = IndexDatabase(db_path)
     try:
-        return SearchEngine(db.conn).search(query, limit, provider, cwd, semantic, ext, branch)
+        return SearchEngine(db.conn).search(
+            query, limit, provider, cwd, semantic, ext, branch, since, until, exclude
+        )
     finally:
         db.close()
 
@@ -75,16 +81,19 @@ class SearchEngine:
         semantic: bool = True,
         ext: list[str] | None = None,
         branch: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        exclude: list[str] | None = None,
     ) -> list[SearchResult]:
         query = collapse_ws(query)
         if not query:
             return []
         candidates: dict[tuple[str, str], Candidate] = {}
 
-        self.add_fts_candidates(candidates, query, provider, cwd, ext, branch)
-        self.add_fuzzy_candidates(candidates, query, provider, cwd, ext, branch)
+        self.add_fts_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
+        self.add_fuzzy_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
         if semantic:
-            self.add_semantic_candidates(candidates, query, provider, cwd, ext, branch)
+            self.add_semantic_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
 
         if not candidates:
             return []
@@ -145,11 +154,14 @@ class SearchEngine:
         cwd: str | None,
         ext: list[str] | None = None,
         branch: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
         rendered = fts_query(query)
         if not rendered:
             return
-        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch)
+        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch, since=since, until=until, exclude=exclude)
 
         message_sql = f"""
             select
@@ -198,8 +210,11 @@ class SearchEngine:
         cwd: str | None,
         ext: list[str] | None = None,
         branch: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
-        filters, params = sql_filters(provider, cwd, ext=ext, branch=branch)
+        filters, params = sql_filters(provider, cwd, ext=ext, branch=branch, since=since, until=until, exclude=exclude)
         rows = self.conn.execute(
             f"""
             select provider, session_id, title, cwd, first_prompt, summary, preview
@@ -237,6 +252,9 @@ class SearchEngine:
         cwd: str | None,
         ext: list[str] | None = None,
         branch: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
         backend_row = self.conn.execute(
             "select backend, dim from embeddings group by backend, dim order by count(*) desc limit 1"
@@ -251,7 +269,7 @@ class SearchEngine:
         except Exception:
             return
 
-        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch)
+        filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch, since=since, until=until, exclude=exclude)
         rows = self.conn.execute(
             f"""
             select e.provider, e.session_id, e.text, e.embedding, e.dim
@@ -299,15 +317,39 @@ def parse_ext_filter(expr: str) -> tuple[str, str, str]:
     return source.strip(), key.strip(), value.strip().replace("*", "%")
 
 
+def parse_day(value: str) -> int:
+    """A YYYY-MM-DD day to the epoch MILLISECONDS the index stores.
+
+    Timestamps here are milliseconds. `datetime(updated_at, 'unixepoch')` on a millisecond
+    value returns NULL rather than erroring, so a hand-written date filter answers "no
+    sessions" with no sign anything went wrong - the reason this filter exists at all.
+    """
+    parsed = datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    return int(parsed.timestamp() * 1000)
+
+
 def sql_filters(
     provider: str | None,
     cwd: str | None,
     table_alias: str = "sessions",
     ext: list[str] | None = None,
     branch: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    exclude: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     conditions = [f"{table_alias}.stale = 0"]
     params: list[str] = []
+    if since:
+        conditions.append(f"{table_alias}.updated_at >= ?")
+        params.append(str(parse_day(since)))
+    if until:
+        # Inclusive of the named day, so --until 2026-10-18 keeps that day's sessions.
+        conditions.append(f"{table_alias}.updated_at < ?")
+        params.append(str(parse_day(until) + 86_400_000))
+    for session_id in exclude or []:
+        conditions.append(f"{table_alias}.session_id != ?")
+        params.append(session_id)
     if provider:
         conditions.append(f"{table_alias}.provider = ?")
         params.append(provider)

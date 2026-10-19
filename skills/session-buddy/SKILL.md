@@ -28,6 +28,8 @@ sb "retry backoff PR review" --limit 8
 | `--ext SOURCE[.KEY][=VALUE]` | filter on orchestrator metadata, e.g. `--ext traycer.epic_title=Payments` |
 | `--show-ext` | print that metadata under each hit |
 | `--branch NAME` | sessions that touched a branch (substring or `*` glob), not just started on it |
+| `--since` / `--until` | `YYYY-MM-DD`, UTC, both inclusive |
+| `--exclude ID` | drop a session from results; pass your own id when searching your own topic |
 
 Orchestrators (Traycer and Conductor today) may annotate sessions they ran. When present, titles come from
 the orchestrator rather than the transcript's first line, and `sb groups` lists the epics with
@@ -100,6 +102,12 @@ When several sessions cover the same work, say how they relate — driver vs. ch
 pass vs. round two — rather than listing them flat.
 
 ## Gotchas
+
+- **Index timestamps are milliseconds.** `datetime(updated_at, 'unixepoch')` on a millisecond
+  value returns NULL rather than erroring, so a hand-written date filter answers "no sessions"
+  with nothing to show it went wrong. Use `--since` / `--until`, or divide by 1000 in SQL.
+- **Your own transcript is in the index.** Searching a topic you just worked on ranks your own
+  session first. Pass `--exclude <your session id>`.
 
 - **All providers.** Claude-only greps miss every Codex subagent, and every opencode and pi
   session. Do not filter to one provider unless asked.
