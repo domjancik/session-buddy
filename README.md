@@ -253,8 +253,17 @@ Commands are quotable too; these patterns appear in this repository's own tests.
 candidates tie, the command says so and hands over the one check that has settled every case:
 
 ```text
-2 candidates share the strongest evidence, and every kind of it is text another session
-could have quoted. Match the `command at` time against the PR's own creation time.
+2 candidates share the strongest evidence. A command is text another session could have
+quoted, so match any `command at` time above against the PR's own creation time to settle it.
+```
+
+A tie made only of `start` rows gets a different message, because `start` comes from the
+provider's own record and cannot be quoted. Those candidates were launched on the branch and
+left no other trace of it — the shape of a reviewer or a coordinator, not of an author:
+
+```text
+6 candidates tie on launch evidence alone, and none of them ran a command on this branch.
+The session that did may have left no transcript: try `sb agents --missing`.
 ```
 
 `command at` is when the session ran `gh pr create` or `git push`. Against a PR's `createdAt`
