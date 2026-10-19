@@ -122,6 +122,9 @@ pass vs. round two — rather than listing them flat.
   session's starting branch.
 - **Interactive TUI use leaves no transcript.** A missing session proves nothing about whether
   the user did that work by hand.
+- **A branch hit is not proof of ownership.** A session that quoted push output collects the
+  branch name. Use `sb owner <branch>`: it ranks by evidence, flags `quoted only`, and says
+  when it cannot decide. Confirm before naming an owner.
 - **Some sessions exist only as annotations.** An orchestrator recorded them, the provider
   never wrote a transcript, and every search joins through the session table — so they are
   invisible to `search` while still being the only record of who did the work. `sb agents
