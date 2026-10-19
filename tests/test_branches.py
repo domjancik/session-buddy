@@ -149,3 +149,55 @@ def test_branch_filter_accepts_a_glob(tmp_path):
         db.close()
 
     assert [h.session_id for h in search_sessions(path, "webhook", branch="feat/*", semantic=False)] == ["a"]
+
+
+# --- flattened transcript text -------------------------------------------------------------
+# `collapse_ws` removes every newline before a message is stored, so a pattern anchored with
+# `^` and re.M only matches at offset 0 of the whole message. Measured before this fix:
+# 175 of 188 `[new branch]` mentions were unreachable and `On branch` had produced no rows.
+
+FLAT_PUSH = (
+    "To https://github.com/acme/repo.git * [new branch] acme-142-retry -> acme-142-retry "
+    "branch 'acme-142-retry' set up to track 'origin/acme-142-retry'. "
+    "To https://github.com/acme/repo.git * [new branch] acme-143-gate -> acme-143-gate "
+    "branch 'acme-143-gate' set up to track 'origin/acme-143-gate'."
+)
+
+
+def test_push_output_is_found_without_a_line_start():
+    """The real stored shape: one line, the marker preceded by the remote URL."""
+    found = {(b.branch, b.evidence) for b in extract_branches(record(FLAT_PUSH))}
+
+    assert ("acme-142-retry", "push") in found
+
+
+def test_every_push_in_a_flattened_message_is_found():
+    """Three branches pushed in one tool result must not collapse to the first."""
+    branches = {b.branch for b in extract_branches(record(FLAT_PUSH))}
+
+    assert {"acme-142-retry", "acme-143-gate"} <= branches
+
+
+def test_set_up_to_track_is_its_own_evidence():
+    """`push -u` output where the [new branch] line is absent from the captured text."""
+    text = "branch 'acme-144-only-tracked' set up to track 'origin/acme-144-only-tracked'."
+
+    found = {(b.branch, b.evidence) for b in extract_branches(record(text))}
+
+    assert ("acme-144-only-tracked", "push") in found
+
+
+def test_on_branch_is_found_mid_string():
+    """`^On branch …$` matched nothing once newlines were gone."""
+    text = "$ git status On branch acme-145-status Your branch is up to date."
+
+    found = {(b.branch, b.evidence) for b in extract_branches(record(text))}
+
+    assert ("acme-145-status", "status") in found
+
+
+def test_a_placeholder_name_is_not_a_branch():
+    """Transcripts discuss these patterns, so prose about them matches them."""
+    text = "the regex is branch 'X' set up to track, which only a real push emits"
+
+    assert {b.branch for b in extract_branches(record(text))} == {"start-branch"}

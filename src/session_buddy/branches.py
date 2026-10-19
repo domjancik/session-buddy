@@ -21,6 +21,13 @@ a checkout in place. Push output and `worktree add` carry the signal.
 
 Evidence is stored alongside each branch. A name seen in push output is a strong claim; one
 seen in prose is not, which is why prose is not scanned at all.
+
+**These patterns run against text with no newlines.** A transcript message is flattened by
+`collapse_ws` before it is stored, so `re.M` with `^` anchors matches only at offset 0 of the
+whole message. Measured on one index: 175 of 188 `[new branch]` mentions were unreachable, and
+the `On branch` pattern had never produced a single row. Every pattern here must therefore
+match mid-string, and each carries its own discriminator - `[new branch]`, a sha range, or
+`set up to track` - instead of leaning on line position for precision.
 """
 
 from __future__ import annotations
@@ -43,18 +50,20 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "push",
         re.compile(
-            rf"^\s*[*+!=-]?\s*(?:\[new branch\]|\[deleted\]|{SHA}\.\.\.?{SHA})\s+"
-            rf"({BRANCH})\s+->\s+({BRANCH})",
-            re.M,
+            rf"(?:\[new branch\]|\[deleted\]|{SHA}\.\.\.?{SHA})\s+"
+            rf"({BRANCH})\s+->\s+({BRANCH})"
         ),
     ),
+    # `branch 'x' set up to track 'origin/x'.` - emitted by push -u and by checkout, and the
+    # only line that survives when a tool result is flattened.
+    ("push", re.compile(rf"branch '({BRANCH})' set up to track")),
     # explicit invocation against a named remote: `git push origin feature`
     ("push", re.compile(rf"git\s+push\s+(?:-{{1,2}}[A-Za-z-]+\s+)*(?:origin|upstream)\s+({BRANCH})")),
     # `git worktree add -b feature ../wt` — the -b form names the branch unambiguously
     ("worktree", re.compile(rf"worktree\s+add\s+(?:-{{1,2}}[A-Za-z-]+\s+)*-b\s+({BRANCH})")),
     # `git worktree add ../wt feature` — branch is the trailing token after a path
     ("worktree", re.compile(rf"worktree\s+add\s+(?:-{{1,2}}[A-Za-z-]+\s+)*\S*/\S*\s+({BRANCH})")),
-    ("status", re.compile(rf"^On branch\s+({BRANCH})\s*$", re.M)),
+    ("status", re.compile(rf"(?:^|\s)On branch\s+({BRANCH})(?=\s|$)")),
     ("checkout", re.compile(rf"(?:checkout\s+-b|switch\s+-c)\s+({BRANCH})")),
 )
 
@@ -112,6 +121,11 @@ def normalise(branch: str | None) -> str:
     if name.endswith("/") or name.endswith(".lock") or ".." in name:
         return ""
     if not any(ch.isalnum() for ch in name):
+        return ""
+    # A one-character name is a placeholder, not a branch. Transcripts discuss these patterns,
+    # so prose describing `branch 'X' set up to track` matches the pattern it describes - which
+    # is how `X` entered the index the first time this ran.
+    if len(name) < 2:
         return ""
     if name.lower() in IGNORED or SHA_ONLY.match(name):
         return ""

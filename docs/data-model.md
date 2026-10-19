@@ -338,6 +338,28 @@ alongside `parent_id`. The lookup is keyed by chat id as well as binding id, bec
 agent's binding is keyed by the agent id inside it while a child references its chat id — the
 two namespaces meet only here.
 
+## Branch extraction runs on flattened text
+
+`collapse_ws` removes every newline before a message is stored, so a pattern anchored with `^`
+under `re.M` can only match at offset 0 of the entire message. Measured before this was fixed:
+
+| | |
+| --- | --- |
+| `[new branch]` mentions in the index | 188 |
+| reachable by the anchored pattern | **13** |
+| `On branch` rows ever produced | **0** |
+
+The `push` rows that did exist came from the unanchored `git push origin <branch>` command
+pattern, so the index looked populated while the push *output* contributed almost nothing. A
+branch pushed with `-u` and never named on a command line had no row at all.
+
+Every pattern now matches mid-string and carries its own discriminator — `[new branch]`, a sha
+range, or `set up to track` — rather than leaning on line position for precision.
+
+One consequence of scanning transcripts: prose *about* these patterns matches them. A one
+character name is rejected for that reason, after `branch 'X' set up to track` written in an
+agent's own message put `X` in the index.
+
 ## Non-goals
 
 - **No cross-tool group table.** Epics, swarms and projects are not the same thing.
