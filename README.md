@@ -258,7 +258,17 @@ could have quoted. Match the `command at` time against the PR's own creation tim
 ```
 
 `command at` is when the session ran `gh pr create` or `git push`. Against a PR's `createdAt`
-it resolves to the second.
+it resolves to the second. Every row of the evidence it applies to carries one: `pr`, `push`,
+`worktree`, `checkout`, `push-output` and `status` are all timestamped, and only `start` is
+not, because it comes from the provider's own record rather than from a message.
+
+Tied candidates are listed earliest command first. A quote of a `gh pr create` can only be
+written after the real one, so this puts the likely answer on top without claiming to have
+settled it.
+
+A measurement worth keeping: across 1,675 sessions, **271** (branch, session) pairs reach two
+or more non-`push-output` kinds, and **none** of them was first seen seven or more days after
+that branch's earliest evidence. Corroboration is not being accumulated after the fact.
 
 When every candidate only quoted the branch, the session that did the work probably left no
 transcript, and the output points at `sb agents --missing`.
