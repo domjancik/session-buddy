@@ -103,7 +103,9 @@ def build_parser() -> argparse.ArgumentParser:
     index_parser.set_defaults(func=cmd_index)
 
     search_parser = subparsers.add_parser("search", help="Search indexed sessions.")
-    search_parser.add_argument("query")
+    # Optional, so a pure filter works: "which sessions touched branch X" needed direct
+    # sqlite because the parser demanded a query that the question does not have.
+    search_parser.add_argument("query", nargs="?", default="")
     search_parser.add_argument("--limit", type=int, default=20)
     search_parser.add_argument("--provider", choices=["claude", "codex", "opencode", "pi"])
     search_parser.add_argument("--cwd", help="Only show sessions whose cwd contains this text.")
@@ -119,10 +121,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-ext", action="store_true", help="Print annotator metadata under each result."
     )
     search_parser.add_argument(
-        "--since", metavar="YYYY-MM-DD", help="Only sessions updated on or after this day (UTC)."
+        "--since",
+        metavar="YYYY-MM-DD",
+        help="Sessions LAST TOUCHED on or after this day (UTC). A long-lived session is "
+        "dated by its last activity, so this narrows; it does not ask what happened that day.",
     )
     search_parser.add_argument(
-        "--until", metavar="YYYY-MM-DD", help="Only sessions updated on or before this day (UTC)."
+        "--until",
+        metavar="YYYY-MM-DD",
+        help="Sessions LAST TOUCHED on or before this day (UTC), inclusive.",
     )
     search_parser.add_argument(
         "--exclude",
@@ -319,10 +326,12 @@ def cmd_owner(args: argparse.Namespace) -> int:
         return 1
     for row in rows:
         marks = []
-        if row["in_worktree"]:
-            marks.append("in its worktree")
         if row["quoted_only"]:
             marks.append("quoted only")
+        if row["launched_here"]:
+            marks.append("launched in this worktree")
+        if row["command_at"]:
+            marks.append(f"command at {format_time(row['command_at'])}Z")
         suffix = f"  [{'; '.join(marks)}]" if marks else ""
         title = truncate(row["title"] or row["session_id"], 42)
         print(
@@ -336,11 +345,12 @@ def cmd_owner(args: argparse.Namespace) -> int:
             "left no transcript; `sb agents --missing` may name it.",
             file=sys.stderr,
         )
-    elif len(strong) > 1 and not any(r["in_worktree"] for r in strong):
-        # Commands and output are both quotable, so a tie here is genuinely undecided.
+    elif len(strong) > 1 and strong[0]["corroboration"] == strong[1]["corroboration"]:
+        # Commands and output are both quotable, so equal corroboration is undecided.
         print(
-            f"\n{len(strong)} candidates and none ran in the branch's worktree. Evidence is "
-            "text either session could have quoted; confirm before naming an owner.",
+            f"\n{len(strong)} candidates share the strongest evidence, and every kind of it "
+            "is text another session could have quoted. Match the `command at` time against "
+            "the PR's own creation time to settle it.",
             file=sys.stderr,
         )
     return 0

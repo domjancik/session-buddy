@@ -98,13 +98,13 @@ def extract_branches(record: SessionRecord) -> list[BranchRef]:
     """Every branch this session can be shown to have touched, with how it was seen."""
     seen: dict[tuple[str, str], BranchRef] = {}
 
-    def add(branch: str, evidence: str) -> None:
+    def add(branch: str, evidence: str, seen_at: int | None = None) -> None:
         name = normalise(branch)
         if not name:
             return
         key = (name, evidence)
         seen.setdefault(
-            key, BranchRef(record.provider, record.session_id, name, evidence)
+            key, BranchRef(record.provider, record.session_id, name, evidence, seen_at)
         )
 
     add(record.git_branch, "start")
@@ -113,7 +113,7 @@ def extract_branches(record: SessionRecord) -> list[BranchRef]:
             for match in pattern.finditer(message.text):
                 for group in match.groups():
                     if group:
-                        add(group, evidence)
+                        add(group, evidence, message.timestamp)
     return list(seen.values())
 
 

@@ -141,6 +141,9 @@ class IndexDatabase:
         # chosen name earns the search bonus; boosting a derived title would double-count
         # the first prompt, which the full-text index already scores.
         self.ensure_column("sessions", "titled", "integer not null default 0")
+        # When the evidence was written, so a `gh pr create` can be matched against a PR's
+        # own creation time - the check that has settled ownership every time it was tried.
+        self.ensure_column("session_branches", "seen_at", "integer")
         self.ensure_column("sessions", "title_source", "text not null default 'provider'")
         self.conn.execute(
             "update sessions set provider_title = title where provider_title = ''"
@@ -246,7 +249,7 @@ class IndexDatabase:
 
         rows = self.conn.execute(
             """
-            select b.provider, b.session_id, b.evidence, s.title, s.cwd, s.updated_at
+            select b.provider, b.session_id, b.evidence, b.seen_at, s.title, s.cwd, s.updated_at
             from session_branches b
             left join sessions s
               on s.provider = b.provider and s.session_id = b.session_id
@@ -266,9 +269,14 @@ class IndexDatabase:
                     "cwd": row["cwd"],
                     "updated_at": row["updated_at"],
                     "evidence": set(),
+                    "command_at": None,
                 },
             )
             entry["evidence"].add(row["evidence"])
+            if row["evidence"] in ("pr", "push") and row["seen_at"]:
+                # Earliest command wins: a later mention is as likely a retry as the act.
+                if entry["command_at"] is None or row["seen_at"] < entry["command_at"]:
+                    entry["command_at"] = row["seen_at"]
         order = {name: rank for rank, name in enumerate(EVIDENCE_STRENGTH)}
         out = []
         for entry in grouped.values():
@@ -279,13 +287,17 @@ class IndexDatabase:
             entry["quoted_only"] = evidence == ["push-output"]
             out.append(entry)
         for entry in out:
-            # A quoting session can reproduce any command or output; what it cannot do is run
-            # in the branch's own worktree. This is the one signal here that is not text.
-            cwd = (entry["cwd"] or "").lower()
-            entry["in_worktree"] = branch.lower() in cwd
+            # `sessions.cwd` records where a session was LAUNCHED, and agents cd constantly:
+            # measured, 82% of command-evidence rows sit on a session launched elsewhere. It
+            # also drifts - a worktree outlives the PR that created it, so a later occupant
+            # looked like the author 38 days on. Kept as a displayed hint, never as a rank.
+            entry["launched_here"] = branch.lower() in (entry["cwd"] or "").lower()
+            # Independent kinds is the usable signal: quoting a report reproduces whichever
+            # lines it contained, rarely a command AND its output AND a worktree creation.
+            entry["corroboration"] = len([e for e in entry["evidence"] if e != "push-output"])
         out.sort(
             key=lambda e: (
-                not e["in_worktree"],
+                -e["corroboration"],
                 order.get(e["best"], 99),
                 -(e["updated_at"] or 0),
             )
@@ -388,12 +400,13 @@ class IndexDatabase:
 
     def branches_for(self, provider: str, session_id: str) -> list[BranchRef]:
         rows = self.conn.execute(
-            "select provider, session_id, branch, evidence from session_branches"
+            "select provider, session_id, branch, evidence, seen_at from session_branches"
             " where provider = ? and session_id = ? order by branch, evidence",
             (provider, session_id),
         ).fetchall()
         return [
-            BranchRef(row["provider"], row["session_id"], row["branch"], row["evidence"])
+            BranchRef(row["provider"], row["session_id"], row["branch"], row["evidence"],
+                      row["seen_at"])
             for row in rows
         ]
 
@@ -464,9 +477,12 @@ class IndexDatabase:
                 (record.provider, record.session_id),
             )
             self.conn.executemany(
-                "insert or replace into session_branches (provider, session_id, branch, evidence)"
-                " values (?, ?, ?, ?)",
-                [(b.provider, b.session_id, b.branch, b.evidence) for b in extract_branches(record)],
+                "insert or replace into session_branches"
+                " (provider, session_id, branch, evidence, seen_at) values (?, ?, ?, ?, ?)",
+                [
+                    (b.provider, b.session_id, b.branch, b.evidence, b.seen_at)
+                    for b in extract_branches(record)
+                ],
             )
             for message in record.messages:
                 message_id = self.insert_message(message)

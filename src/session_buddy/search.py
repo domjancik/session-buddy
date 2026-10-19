@@ -86,13 +86,17 @@ class SearchEngine:
         exclude: list[str] | None = None,
     ) -> list[SearchResult]:
         query = collapse_ws(query)
-        if not query:
+        has_filter = any((provider, cwd, ext, branch, since, until))
+        if not query and not has_filter:
             return []
         candidates: dict[tuple[str, str], Candidate] = {}
 
         self.add_fts_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
-        self.add_fuzzy_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
-        if semantic:
+        if query:
+            self.add_fuzzy_candidates(
+                candidates, query, provider, cwd, ext, branch, since, until, exclude
+            )
+        if semantic and query:
             self.add_semantic_candidates(candidates, query, provider, cwd, ext, branch, since, until, exclude)
 
         if not candidates:
@@ -160,6 +164,18 @@ class SearchEngine:
     ) -> None:
         rendered = fts_query(query)
         if not rendered:
+            # No query, but a filter may still select sessions. Returning nothing here is what
+            # made "which sessions touched branch X" unanswerable without raw sqlite.
+            if any((provider, cwd, ext, branch, since, until)):
+                filters, params = sql_filters(provider, cwd, ext=ext, branch=branch,
+                                              since=since, until=until, exclude=exclude)
+                rows = self.conn.execute(
+                    f"select provider, session_id from sessions where 1=1 {filters}", params
+                ).fetchall()
+                for row in rows:
+                    key = (row["provider"], row["session_id"])
+                    candidate = candidates.setdefault(key, Candidate(*key))
+                    candidate.fts_score = max(candidate.fts_score, 0.01)
             return
         filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch, since=since, until=until, exclude=exclude)
 

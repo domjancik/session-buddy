@@ -16,7 +16,8 @@ from session_buddy.database import IndexDatabase
 from session_buddy.models import BranchRef, MessageRecord, SessionRecord
 
 
-def session(db, session_id: str, cwd: str, evidence: list[str], branch: str = "acme-142"):
+def session(db, session_id: str, cwd: str, evidence: list[str], branch: str = "acme-142",
+            seen_at: int | None = None):
     db.upsert_session(
         SessionRecord(
             provider="claude", session_id=session_id, title=f"s-{session_id}", cwd=cwd,
@@ -28,9 +29,9 @@ def session(db, session_id: str, cwd: str, evidence: list[str], branch: str = "a
         embedder=None,
     )
     db.conn.executemany(
-        "insert or replace into session_branches (provider, session_id, branch, evidence)"
-        " values ('claude', ?, ?, ?)",
-        [(session_id, branch, e) for e in evidence],
+        "insert or replace into session_branches"
+        " (provider, session_id, branch, evidence, seen_at) values ('claude', ?, ?, ?, ?)",
+        [(session_id, branch, e, seen_at) for e in evidence],
     )
     db.conn.commit()
 
@@ -57,16 +58,39 @@ def test_a_command_is_not_quoted_only(db):
     assert db.branch_owners("acme-142")[0]["quoted_only"] is False
 
 
-def test_the_session_in_the_branch_worktree_ranks_first(db):
-    """The one signal a quoting session cannot reproduce: where it was running."""
-    session(db, "quoter", "/repo/elsewhere", ["pr", "push", "push-output"])
-    session(db, "worker", "/repo/.worktrees/acme-142-abc", ["push-output"])
+def test_a_launch_directory_does_not_outrank_corroborated_evidence(db):
+    """`cwd` is where a session was LAUNCHED, and agents cd constantly.
+
+    Measured: 82% of command-evidence rows sit on a session launched elsewhere, and a worktree
+    outlives the PR that created it - a later occupant was ranked above the real author 38 days
+    on. The directory is shown, never ranked.
+    """
+    session(db, "author", "/repo/elsewhere", ["pr", "push", "worktree"])
+    session(db, "later-occupant", "/repo/.worktrees/acme-142-abc", ["push-output"])
 
     ranked = db.branch_owners("acme-142")
 
-    assert ranked[0]["session_id"] == "worker"
-    assert ranked[0]["in_worktree"] is True
-    assert ranked[1]["session_id"] == "quoter"
+    assert ranked[0]["session_id"] == "author"
+    assert ranked[0]["corroboration"] == 3
+    assert ranked[1]["launched_here"] is True, "still reported, just not ranked on"
+
+
+def test_corroboration_counts_only_kinds_a_quote_cannot_stack(db):
+    session(db, "quoter", "/repo/a", ["pr", "push-output"])
+    session(db, "author", "/repo/b", ["pr", "push", "worktree"])
+
+    ranked = db.branch_owners("acme-142")
+
+    assert [r["session_id"] for r in ranked] == ["author", "quoter"]
+    assert ranked[0]["corroboration"] == 3
+    assert ranked[1]["corroboration"] == 1
+
+
+def test_the_command_time_is_reported_for_matching_against_a_pr(db):
+    """The check that has settled ownership every time: command time vs the PR's own."""
+    session(db, "author", "/repo/a", ["pr"], seen_at=1_700_000_123_000)
+
+    assert db.branch_owners("acme-142")[0]["command_at"] == 1_700_000_123_000
 
 
 def test_stronger_evidence_ranks_first_when_no_worktree_matches(db):
@@ -93,7 +117,8 @@ def test_cmd_owner_says_when_it_cannot_decide(db, capsys):
 
     out, err = capsys.readouterr()
     assert code == 0
-    assert "2 candidates and none ran in the branch's worktree" in err
+    assert "share the strongest evidence" in err
+    assert "Match the `command at` time" in err
     assert "one" in out and "two" in out
 
 

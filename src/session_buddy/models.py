@@ -102,3 +102,6 @@ class BranchRef:
     session_id: str
     branch: str
     evidence: str
+    seen_at: int | None = None
+    """When the message carrying this evidence was written, for matching against a PR's
+    creation time - the one check that has settled ownership every time it was tried."""
