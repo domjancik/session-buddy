@@ -122,6 +122,9 @@ pass vs. round two — rather than listing them flat.
   session's starting branch.
 - **Interactive TUI use leaves no transcript.** A missing session proves nothing about whether
   the user did that work by hand.
+- **`--since` / `--until` filter LAST TOUCHED**, not the day work happened. A session resumed
+  today is absent from a query for the day it ran the command.
+- **A filter needs no query**: `sb search --branch <name>` lists every session that touched it.
 - **A branch hit is not proof of ownership.** A session that quoted push output collects the
   branch name. Use `sb owner <branch>`: it ranks by evidence, flags `quoted only`, and says
   when it cannot decide. Confirm before naming an owner.

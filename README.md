@@ -240,17 +240,25 @@ sb owner dis-1725-ledger-planner-stats
 claude  1828c499  DIS-1725 ledger planner stats   start,push,push-output  [in its worktree]
 ```
 
-Evidence is ranked: `start`, `pr`, `push`, `worktree`, `checkout`, then `push-output`, which
-is the weakest because it is what quoting collects. A session running in the branch's own
-worktree ranks above all of them — it is the one signal here that is not text.
+Ranking is by **corroboration** — how many independent kinds of evidence a session has, not
+counting `push-output`. Quoting a report reproduces whichever lines it contained; it rarely
+reproduces a command *and* its output *and* a worktree creation.
 
-Commands are quotable too; these patterns appear in this repository's own tests. When the
-candidates tie and none ran in the worktree, the command says so instead of choosing:
+The launch directory is shown and never ranked on. `sessions.cwd` records where a session
+started, and agents `cd` constantly: measured, **82% of command-evidence rows sit on a session
+launched somewhere else**. It also drifts — a worktree outlives the PR that created it, and a
+session reusing one 38 days later was ranked above the real author.
+
+Commands are quotable too; these patterns appear in this repository's own tests. When
+candidates tie, the command says so and hands over the one check that has settled every case:
 
 ```text
-2 candidates and none ran in the branch's worktree. Evidence is text either session could
-have quoted; confirm before naming an owner.
+2 candidates share the strongest evidence, and every kind of it is text another session
+could have quoted. Match the `command at` time against the PR's own creation time.
 ```
+
+`command at` is when the session ran `gh pr create` or `git push`. Against a PR's `createdAt`
+it resolves to the second.
 
 When every candidate only quoted the branch, the session that did the work probably left no
 transcript, and the output points at `sb agents --missing`.
@@ -291,6 +299,7 @@ sb "webhook retry"                    # a bare query means search
 sb search "webhook retry"             # explicit form
 sb "acme-mono" --provider codex --limit 20
 sb "routing" --auto-index
+sb search --branch dis-1725-ledger-planner-stats            # a filter needs no query
 sb "envoy gateway" --since 2026-06-01 --until 2026-06-01   # one UTC day, both ends inclusive
 sb "session buddy" --exclude <your-session-id>             # drop your own transcript
 ```
@@ -298,6 +307,10 @@ sb "session buddy" --exclude <your-session-id>             # drop your own trans
 Index timestamps are milliseconds. `datetime(updated_at, 'unixepoch')` on a millisecond value
 returns NULL instead of erroring, so a hand-written date filter reports no sessions and looks
 like an answer. `--since` and `--until` do the arithmetic.
+
+They filter on **last touched**, so a long-lived session is dated by its most recent activity
+rather than by the day it did the work. Use them to narrow a result set; a session that ran a
+command on the 28th and was resumed today will not appear under that day.
 
 Search warns when the index is stale. Pass `--auto-index` to update changed sources and prune deleted index entries before searching.
 

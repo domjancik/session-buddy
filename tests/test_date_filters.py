@@ -110,3 +110,29 @@ def test_a_bad_day_is_rejected_rather_than_ignored(tmp_path):
 
     with pytest.raises(ValueError):
         search_sessions(path, "webhook", semantic=False, since="last tuesday")
+
+
+def test_a_filter_with_no_query_still_selects(tmp_path):
+    """"Which sessions touched branch X" has no query, and used to need raw sqlite."""
+    path = seed(tmp_path, [("a", "2026-06-01"), ("b", "2026-10-18")])
+    db = IndexDatabase(path)
+    try:
+        db.conn.execute(
+            "insert or replace into session_branches"
+            " (provider, session_id, branch, evidence, seen_at)"
+            " values ('claude', 'a', 'acme-142', 'push', 1)"
+        )
+        db.conn.commit()
+    finally:
+        db.close()
+
+    hits = search_sessions(path, "", semantic=False, branch="acme-142")
+
+    assert [h.session_id for h in hits] == ["a"]
+
+
+def test_no_query_and_no_filter_still_returns_nothing(tmp_path):
+    """A bare `sb search` must not dump the index."""
+    path = seed(tmp_path, [("a", "2026-06-01")])
+
+    assert search_sessions(path, "", semantic=False) == []
