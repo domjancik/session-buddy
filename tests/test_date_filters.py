@@ -136,3 +136,25 @@ def test_no_query_and_no_filter_still_returns_nothing(tmp_path):
     path = seed(tmp_path, [("a", "2026-06-01")])
 
     assert search_sessions(path, "", semantic=False) == []
+
+
+def test_a_filter_only_search_orders_by_first_evidence(tmp_path):
+    """With nothing to score, every session tied and recency put the last discusser on top."""
+    path = seed(tmp_path, [("author", "2026-06-01"), ("quoter", "2026-10-18")])
+    db = IndexDatabase(path)
+    try:
+        db.conn.executemany(
+            "insert or replace into session_branches"
+            " (provider, session_id, branch, evidence, seen_at) values ('claude', ?, ?, ?, ?)",
+            [
+                ("author", "acme-142", "push", 1_700_000_000_000),
+                ("quoter", "acme-142", "push-output", 2_000_000_000_000),
+            ],
+        )
+        db.conn.commit()
+    finally:
+        db.close()
+
+    hits = search_sessions(path, "", semantic=False, branch="acme-142")
+
+    assert [h.session_id for h in hits] == ["author", "quoter"]

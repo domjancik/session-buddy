@@ -295,10 +295,15 @@ class IndexDatabase:
             # Independent kinds is the usable signal: quoting a report reproduces whichever
             # lines it contained, rarely a command AND its output AND a worktree creation.
             entry["corroboration"] = len([e for e in entry["evidence"] if e != "push-output"])
+        # Within a tie, the earliest command runs first: a quote of a `gh pr create` can only
+        # be written after the real one. This does not settle ownership - it puts the likely
+        # answer on top while the output still tells the reader to check the clock.
+        far_future = 1 << 62
         out.sort(
             key=lambda e: (
                 -e["corroboration"],
                 order.get(e["best"], 99),
+                e["command_at"] if e["command_at"] is not None else far_future,
                 -(e["updated_at"] or 0),
             )
         )

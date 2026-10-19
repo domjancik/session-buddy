@@ -172,10 +172,25 @@ class SearchEngine:
                 rows = self.conn.execute(
                     f"select provider, session_id from sessions where 1=1 {filters}", params
                 ).fetchall()
-                for row in rows:
-                    key = (row["provider"], row["session_id"])
+                # With nothing to score, every session tied and sorted by recency, which put
+                # whoever last discussed the branch above whoever touched it. Order by when
+                # each session's evidence for the filtered branch first appeared.
+                seen_at = {}
+                if branch:
+                    for row in self.conn.execute(
+                        "select provider, session_id, min(seen_at) as first_seen"
+                        " from session_branches where branch like ?"
+                        " group by provider, session_id",
+                        (f"%{branch.replace('*', '%')}%",),
+                    ):
+                        seen_at[(row["provider"], row["session_id"])] = row["first_seen"]
+                ordered = sorted(
+                    ((row["provider"], row["session_id"]) for row in rows),
+                    key=lambda key: (seen_at.get(key) is None, seen_at.get(key) or 0),
+                )
+                for rank, key in enumerate(ordered):
                     candidate = candidates.setdefault(key, Candidate(*key))
-                    candidate.fts_score = max(candidate.fts_score, 0.01)
+                    candidate.fts_score = max(candidate.fts_score, 1.0 / (rank + 1))
             return
         filters, params = sql_filters(provider, cwd, table_alias="s", ext=ext, branch=branch, since=since, until=until, exclude=exclude)
 

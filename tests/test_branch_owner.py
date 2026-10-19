@@ -139,3 +139,21 @@ def test_cmd_owner_reports_an_unknown_branch(db, capsys):
 
     assert code == 1
     assert "No session touched nope." in capsys.readouterr().err
+
+
+def test_a_tie_leads_with_the_earliest_command(db):
+    """A quote of a `gh pr create` can only be written after the real one."""
+    session(db, "quoter", "/repo/a", ["pr", "push-output"], seen_at=2_000_000_000_000)
+    session(db, "author", "/repo/b", ["pr", "push-output"], seen_at=1_700_000_000_000)
+
+    ranked = db.branch_owners("acme-142")
+
+    assert [r["session_id"] for r in ranked] == ["author", "quoter"]
+    assert ranked[0]["corroboration"] == ranked[1]["corroboration"], "still a tie, just ordered"
+
+
+def test_a_candidate_with_no_command_time_sorts_after_one_with(db):
+    session(db, "timeless", "/repo/a", ["pr", "push-output"])
+    session(db, "timed", "/repo/b", ["pr", "push-output"], seen_at=1_700_000_000_000)
+
+    assert [r["session_id"] for r in db.branch_owners("acme-142")] == ["timed", "timeless"]
