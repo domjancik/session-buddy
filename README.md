@@ -328,8 +328,32 @@ A session whose transcript expired still answers every search. `sb resume` refus
 says why rather than reporting it as unknown. If the file comes back, re-indexing clears the
 flag.
 
+The index is now the only copy of an expired session, so each flagged session is also written
+out as JSONL beside the database, at the moment it is flagged:
+
+```text
+~/.session-buddy/archive/claude/<session id>.jsonl
+```
+
+One header line, then one line per message. `rg` reads it without this tool, and `sb show`
+falls back to it for a session that was forgotten outright. Only expired sessions are
+written, so the directory stays small. `--archive-dir` moves it.
+
 The provider's retention window is a setting on the provider, not on this tool — raising it
 keeps the original files around longer, which is worth doing separately.
+
+### Subagent transcripts
+
+A subagent transcript records its *parent's* `sessionId`, and the parser gives the child its
+own id, `<parent>/<agent file>`. Its messages kept the parent's id, which filed the child's
+text under the parent — where the parent's next index deleted it, because an upsert clears
+messages by the id it is writing. Measured 2026-10-20: **111 subagent sessions held 0 message
+rows between them**, while their files sat on disk. Re-keying the messages recovered 11,291
+of them.
+
+This matters more than the count suggests: subagent files escape the provider's retention
+sweep, so they outlive every top-level transcript, and the real work often happens in the
+child while the parent holds only the handoff.
 
 ## Index Status
 

@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 
+from .archive import default_archive_dir, read_archived_session
 from .database import IndexDatabase
 from .indexer import check_index_freshness, index_all
 from .parsers import default_opencode_home, default_pi_home
@@ -103,6 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--prune",
         action="store_true",
         help="Flag sessions whose source files disappeared. Their indexed text is kept.",
+    )
+    index_parser.add_argument(
+        "--archive-dir",
+        type=expanded_path,
+        help="Where expired sessions are written as JSONL. Defaults to <db dir>/archive.",
     )
     index_parser.add_argument(
         "--forget-missing",
@@ -210,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     show_parser.add_argument("session_id")
     show_parser.add_argument("--provider", choices=["claude", "codex", "opencode", "pi"])
     show_parser.add_argument("--limit", type=int, help="Print only the first N messages.")
+    show_parser.add_argument("--archive-dir", type=expanded_path, help="Where to look for a forgotten session.")
     show_parser.set_defaults(func=cmd_show)
 
     resume_parser = subparsers.add_parser("resume", help="Resume an indexed session.")
@@ -253,6 +260,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         semantic=not args.no_semantic,
         semantic_backend=args.semantic_backend,
         semantic_model=args.semantic_model,
+        archive_dir=args.archive_dir,
     )
     if args.forget_missing:
         db = IndexDatabase(args.db)
@@ -495,14 +503,33 @@ def handle_freshness_for_process(args: argparse.Namespace, auto_index: bool, sem
     return message
 
 
+def print_messages(messages) -> None:
+    for message in messages:
+        timestamp = message["timestamp"]
+        stamp = f"{format_time(timestamp)}Z " if timestamp else ""
+        print(f"[{message['idx']}] {stamp}{message['role']}:")
+        print(message["text"])
+        print()
+
+
 def cmd_show(args: argparse.Namespace) -> int:
     db = IndexDatabase(args.db)
     try:
         matches = [r for r in db.find_sessions_by_id(args.session_id)
                    if not args.provider or r["provider"] == args.provider]
         if not matches:
-            print(f"No indexed session with id {args.session_id}", file=sys.stderr)
-            return 1
+            # A forgotten session has no row left, and the archive is then the only copy.
+            archived = read_archived_session(
+                args.archive_dir or default_archive_dir(args.db), args.session_id, args.provider
+            )
+            if archived is None:
+                print(f"No indexed session with id {args.session_id}", file=sys.stderr)
+                return 1
+            print(f"{archived.provider}  {archived.session_id}  {archived.title}")
+            print("Read from the archive. Neither the transcript nor the index row survives.")
+            print()
+            print_messages(archived.messages[: args.limit] if args.limit else archived.messages)
+            return 0
         if len(matches) > 1:
             ids = ", ".join(f"{r['provider']}/{r['session_id'][:8]}" for r in matches)
             print(f"{args.session_id} matches several sessions: {ids}", file=sys.stderr)
@@ -515,11 +542,7 @@ def cmd_show(args: argparse.Namespace) -> int:
     if row["source_missing"]:
         print("The provider deleted this transcript. What follows is the indexed copy.")
     print()
-    for message in messages:
-        stamp = f"{format_time(message['timestamp'])}Z " if message["timestamp"] else ""
-        print(f"[{message['idx']}] {stamp}{message['role']}:")
-        print(message["text"])
-        print()
+    print_messages(messages)
     if not messages:
         print("No messages were indexed for this session.", file=sys.stderr)
         return 1

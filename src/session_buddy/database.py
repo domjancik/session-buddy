@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .embeddings import Embedder, pack_vector
 from .branches import extract_branches
+from .archive import archive_path, write_session
 from .models import AnnotatedTitle, Annotation, BranchRef, MessageRecord, SessionRecord, SourceState
 from .text import truncate
 
@@ -579,7 +580,8 @@ class IndexDatabase:
         self.conn.execute("delete from session_branches where provider = ? and session_id = ?", (provider, session_id))
         self.conn.execute("delete from sessions where provider = ? and session_id = ?", (provider, session_id))
 
-    def mark_seen_sources(self, seen_paths: set[str], prune: bool = False) -> int:
+    def mark_seen_sources(self, seen_paths: set[str], prune: bool = False,
+                          archive_dir: Path | None = None) -> int:
         """Flag sessions whose transcript is gone, keeping the text this index already holds.
 
         This used to delete them. A source file disappears because the provider expired it,
@@ -595,6 +597,8 @@ class IndexDatabase:
             for row in rows:
                 if row["source_path"] in seen_paths:
                     continue
+                if archive_dir is not None:
+                    self.archive_session(archive_dir, row["provider"], row["session_id"])
                 self.conn.execute(
                     "update sessions set source_missing = 1 where provider = ? and session_id = ?",
                     (row["provider"], row["session_id"]),
@@ -603,7 +607,38 @@ class IndexDatabase:
                 # exists; dropping it stops every later run from re-reporting the same loss.
                 self.conn.execute("delete from source_state where source_path = ?", (row["source_path"],))
                 missing += 1
+        if archive_dir is not None:
+            self.archive_unarchived_missing(archive_dir)
         return missing
+
+    def archive_unarchived_missing(self, root: Path) -> int:
+        """Catch up sessions flagged before archiving existed, or whose write failed once."""
+        rows = self.conn.execute(
+            "select provider, session_id from sessions where source_missing = 1"
+        ).fetchall()
+        written = 0
+        for row in rows:
+            if archive_path(root, row["provider"], row["session_id"]).exists():
+                continue
+            if self.archive_session(root, row["provider"], row["session_id"]) is not None:
+                written += 1
+        return written
+
+    def archive_session(self, root: Path, provider: str, session_id: str) -> Path | None:
+        """Write this session's indexed messages out as JSONL. Never fails the caller."""
+        session = self.get_session(provider, session_id)
+        if session is None:
+            return None
+        messages = self.read_messages(provider, session_id)
+        if not messages:
+            return None
+        try:
+            return write_session(root, provider, session_id, str(session["title"] or ""),
+                                 str(session["source_path"] or ""), messages)
+        except OSError:
+            # An unwritable archive directory must not stop the index from recording that the
+            # transcript is gone - that flag is what keeps the rows from being deleted.
+            return None
 
     def forget_missing_sources(self) -> int:
         """Delete the sessions whose transcript is gone. Only an explicit flag calls this."""

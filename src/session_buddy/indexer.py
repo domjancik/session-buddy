@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .annotators import ANNOTATORS
+from .archive import default_archive_dir
 from .database import IndexDatabase
 from .embeddings import Embedder
 from .parsers import (
@@ -82,6 +83,7 @@ def index_all(
     semantic: bool = True,
     semantic_backend: str = "auto",
     semantic_model: str = "BAAI/bge-small-en-v1.5",
+    archive_dir: Path | None = None,
 ) -> IndexStats:
     opencode_home = opencode_home or default_opencode_home()
     pi_home = pi_home or default_pi_home()
@@ -176,7 +178,9 @@ def index_all(
             stats.failed += 1
 
     stats.total_seen = len(seen_paths)
-    stats.pruned = db.mark_seen_sources(seen_paths, prune=prune)
+    stats.pruned = db.mark_seen_sources(
+        seen_paths, prune=prune, archive_dir=archive_dir or default_archive_dir(db_path)
+    )
     run_annotators(db, stats, annotators)
     db.close()
     return stats
