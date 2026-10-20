@@ -15,6 +15,7 @@ import pytest
 
 from session_buddy.annotators.traycer import read_chat_rows, read_chat_store
 from session_buddy.database import IndexDatabase
+from session_buddy.parsers import parse_claude_session
 from session_buddy.models import MessageRecord, SessionRecord
 from session_buddy.parsers import parse_claude_session
 from session_buddy.resume import build_resume_command
@@ -93,9 +94,12 @@ def test_a_store_with_neither_table_is_empty_not_an_error(tmp_path):
 
 # --- subagent transcripts -----------------------------------------------------------------
 
+PARENT_ID = "11111111-2222-3333-4444-555555555555"
+
+
 def write_claude_session(tmp_path: Path, *, subagent: bool) -> Path:
     project = tmp_path / "projects" / "-repo"
-    parent = "11111111-2222-3333-4444-555555555555"
+    parent = PARENT_ID
     directory = project / parent / "subagents" if subagent else project
     directory.mkdir(parents=True, exist_ok=True)
     name = "agent-abc123.jsonl" if subagent else f"{parent}.jsonl"
@@ -128,6 +132,11 @@ def test_a_subagent_does_not_evict_its_parent(tmp_path):
 
         rows = db.conn.execute("select count(*) from sessions").fetchone()[0]
         assert rows == 2, "both the parent and its subagent must survive one index pass"
+        # Row survival was all this asserted, and the text was being lost underneath it: the
+        # child's messages were keyed on the parent id, so writing the parent deleted them.
+        assert [m["text"] for m in db.read_messages("claude", f"{PARENT_ID}/agent-abc123")] == \
+            ["subagent work"]
+        assert [m["text"] for m in db.read_messages("claude", PARENT_ID)] == ["parent work"]
     finally:
         db.close()
 
@@ -354,3 +363,10 @@ def test_show_prints_the_indexed_messages_of_an_expired_session(tmp_path, capsys
     assert code == 0
     assert "compute() returns handled" in out
     assert "deleted this transcript" in out
+
+
+def test_a_subagents_messages_carry_its_own_id(tmp_path):
+    """Measured 2026-10-20: 111 subagent sessions held 0 message rows between them."""
+    child = parse_claude_session(write_claude_session(tmp_path, subagent=True), None, "/repo")
+
+    assert {m.session_id for m in child.messages} == {child.session_id}

@@ -4,6 +4,7 @@ import json
 import os
 import re
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +125,13 @@ def parse_claude_session(path: Path, entry: dict[str, Any] | None, project_path:
     # megabyte, none of them searchable. Give each its own id so they coexist.
     if path.parent.name == "subagents":
         session_id = f"{session_id}{SUBAGENT_SEPARATOR}{path.stem}"
+        # The rows above were keyed on the parent id, which is the only one a subagent
+        # transcript records. Left that way the child's text is filed under the parent: it
+        # answers searches as the parent's words, and the parent's next index deletes it,
+        # because `upsert_session` clears messages by the session id it is writing. Measured
+        # 2026-10-20: 111 subagent sessions, 0 message rows between them, 27,321 messages on
+        # disk - the whole of what the children said, indexed as nothing.
+        messages = [replace(message, session_id=session_id) for message in messages]
 
     # A launcher can set the title too (Traycer starts Claude with `--name`), and it writes
     # the same record a person's /rename does - measured, they are byte-identical bar the
