@@ -137,6 +137,7 @@ class SearchEngine:
                     title=row["title"],
                     cwd=row["cwd"],
                     updated_at=row["updated_at"],
+                    created_at=row["created_at"],
                     git_branch=row["git_branch"],
                     title_source=row["title_source"],
                     score=score,

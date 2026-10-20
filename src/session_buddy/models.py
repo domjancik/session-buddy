@@ -44,6 +44,7 @@ class SearchResult:
     title: str
     cwd: str
     updated_at: int | None
+    created_at: int | None
     git_branch: str
     title_source: str
     score: float
