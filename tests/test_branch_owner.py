@@ -118,8 +118,36 @@ def test_cmd_owner_says_when_it_cannot_decide(db, capsys):
     out, err = capsys.readouterr()
     assert code == 0
     assert "share the strongest evidence" in err
-    assert "Match the `command at` time" in err
+    assert "match any `command at` time" in err
     assert "one" in out and "two" in out
+
+
+def test_cmd_owner_does_not_call_launch_evidence_quotable(db, capsys):
+    """`start` is launch metadata, not transcript text: nobody quoted their way into it."""
+    from session_buddy.cli import cmd_owner
+
+    session(db, "one", "/repo/a", ["start"])
+    session(db, "two", "/repo/b", ["start"])
+
+    cmd_owner(argparse.Namespace(db=db.path, branch="acme-142"))
+
+    err = capsys.readouterr().err
+    assert "quoted" not in err
+    assert "tie on launch evidence alone" in err
+    assert "none of them ran a command" in err
+
+
+def test_cmd_owner_counts_only_the_tied_candidates(db, capsys):
+    """The warning names how many share the top, not how many are above the quoters."""
+    from session_buddy.cli import cmd_owner
+
+    session(db, "one", "/repo/a", ["pr", "push"], seen_at=1_700_000_000_000)
+    session(db, "two", "/repo/b", ["pr", "push"], seen_at=1_700_000_100_000)
+    session(db, "weaker", "/repo/c", ["checkout"])
+
+    cmd_owner(argparse.Namespace(db=db.path, branch="acme-142"))
+
+    assert "2 candidates share the strongest evidence" in capsys.readouterr().err
 
 
 def test_cmd_owner_points_at_transcript_less_authors_when_all_are_quotes(db, capsys):

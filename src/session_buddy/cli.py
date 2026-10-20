@@ -345,14 +345,27 @@ def cmd_owner(args: argparse.Namespace) -> int:
             "left no transcript; `sb agents --missing` may name it.",
             file=sys.stderr,
         )
-    elif len(strong) > 1 and strong[0]["corroboration"] == strong[1]["corroboration"]:
-        # Commands and output are both quotable, so equal corroboration is undecided.
-        print(
-            f"\n{len(strong)} candidates share the strongest evidence, and every kind of it "
-            "is text another session could have quoted. Match the `command at` time against "
-            "the PR's own creation time to settle it.",
-            file=sys.stderr,
-        )
+    else:
+        tied = [r for r in strong if r["corroboration"] == strong[0]["corroboration"]]
+        quotable = {e for r in tied for e in r["evidence"] if e != "start"}
+        if len(tied) > 1 and quotable:
+            # Commands and output are both quotable, so equal corroboration is undecided.
+            print(
+                f"\n{len(tied)} candidates share the strongest evidence. A command is text "
+                "another session could have quoted, so match any `command at` time above "
+                "against the PR's own creation time to settle it.",
+                file=sys.stderr,
+            )
+        elif len(tied) > 1:
+            # `start` is launch metadata rather than transcript text, so nobody quoted their
+            # way into this tie - the candidates were all launched on the branch and left no
+            # other trace of it, which is the shape of a reviewer or a coordinator.
+            print(
+                f"\n{len(tied)} candidates tie on launch evidence alone, and none of them ran "
+                "a command on this branch. The session that did may have left no transcript: "
+                "try `sb agents --missing`.",
+                file=sys.stderr,
+            )
     return 0
 
 
