@@ -234,6 +234,11 @@ class SessionSearchApp(App[ResumeCommand | None]):
             result.title,
             result.cwd,
         ]
+        if result.created_at:
+            # The table column and the CLI headline are both LAST TOUCHED. A session that
+            # began after the work cannot have done it, and that is the one date neither
+            # showed. Not "started on", which this preview already uses for a branch.
+            parts.append(f"began: {format_time(result.created_at)} UTC")
         origin = title_origin(result.title_source)
         if origin:
             parts.append(f"title: {origin}")

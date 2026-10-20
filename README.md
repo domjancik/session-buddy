@@ -372,7 +372,7 @@ sb "acme-mono" --provider codex --limit 20
 sb "routing" --auto-index
 sb search --branch dis-1725-ledger-planner-stats            # a filter needs no query
 sb "envoy gateway" --since 2026-06-01 --until 2026-06-01   # one UTC day, both ends inclusive
-sb "session buddy" --exclude <your-session-id>             # drop your own transcript
+sb "session buddy" --exclude <your-session-id>             # repeatable; drop your own transcript
 ```
 
 Index timestamps are milliseconds. `datetime(updated_at, 'unixepoch')` on a millisecond value
@@ -382,6 +382,34 @@ like an answer. `--since` and `--until` do the arithmetic.
 They filter on **last touched**, so a long-lived session is dated by its most recent activity
 rather than by the day it did the work. Use them to narrow a result set; a session that ran a
 command on the 28th and was resumed today will not appear under that day.
+
+Every hit now also prints `began:`, the session's first message. The headline date, the table
+column and `updated:` are all last-touched, so `began:` is the one date that separates a
+session from a later one discussing the same thing.
+
+### Searching for work you have written about
+
+A search index answers "which session contains these words", and the question usually asked
+is "which session did this work". Those part company once anyone writes *about* the work,
+because a report quoting a command, a branch name or a ticket id is indexed exactly like the
+command itself. Three shapes of this were measured on one machine, all of them the index
+working correctly:
+
+| shape | what it looked like |
+| --- | --- |
+| a report minted branch rows | a session that merely quoted `git push origin acme-142` became a candidate owner of that branch |
+| a report outranked its own subject | the top hit for a topic was the session that had just summarised it |
+| a session downstream of a report outranked the sources the report cited | a later session opened with the same quoted ticket JSON, and scored 58 hits against the 13 and 7 of the sessions it was quoting |
+
+Three defences, in order of how much they help:
+
+- `sb owner <branch>` ranks by corroboration and marks a session whose only evidence is
+  quoted output as `quoted only`. Prefer it over a text search for ownership.
+- `--exclude <id>`, repeatable: drop your own session, and any report you know is downstream.
+- `began:` on every hit. A session that began after the work cannot have done it.
+
+None of them is automatic. The hazard is reading your own echo as corroboration, and an index
+cannot tell a quotation from the thing quoted.
 
 Search warns when the index is stale. Pass `--auto-index` to update changed sources and prune deleted index entries before searching.
 

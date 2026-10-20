@@ -186,3 +186,57 @@ def test_cmd_tui_tolerates_a_namespace_without_the_new_filters(monkeypatch, tmp_
     )
 
     assert cli.cmd_tui(args) == 0
+
+
+def dated_db(tmp_path: Path) -> Path:
+    """A session that began long before it was last touched, which is the case that matters."""
+    db = IndexDatabase(tmp_path / "dated.sqlite")
+    try:
+        db.upsert_session(
+            SessionRecord(
+                provider="claude", session_id=SESSION, title="ACME-142 retry gate",
+                cwd="/repo/acme", created_at=1_700_000_000_000, updated_at=1_800_000_000_000,
+                git_branch="acme-142-start", source_path="/tmp/dated.jsonl",
+                file_mtime=1, file_size=1, message_count=1,
+                first_prompt="webhook retry budget", summary="", preview="webhook retry budget",
+                messages=[MessageRecord(provider="claude", session_id=SESSION, idx=0,
+                                        role="assistant", timestamp=1,
+                                        text="webhook retry budget")],
+            ),
+            embedder=None,
+        )
+        db.conn.commit()
+        return db.path
+    finally:
+        db.close()
+
+
+def test_the_cli_shows_when_a_session_began(tmp_path, capsys):
+    """Headline and `updated` are both LAST TOUCHED, which an echo shares with its source."""
+    from session_buddy.cli import cmd_search
+
+    cmd_search(argparse.Namespace(
+        db=dated_db(tmp_path), query="webhook", limit=5, provider=None, cwd=None,
+        no_semantic=True, global_auto_index=False, auto_index=False,
+        claude_home=Path("/nonexistent"), codex_home=Path("/nonexistent"),
+        opencode_home=Path("/nonexistent"), pi_home=Path("/nonexistent"),
+    ))
+
+    out = capsys.readouterr().out
+    assert "began: 2023-11-14" in out
+    assert "updated: 2027-01-15" in out
+
+
+def test_the_preview_shows_when_a_session_began(tmp_path, monkeypatch):
+    from session_buddy.search import search_sessions
+
+    path = dated_db(tmp_path)
+    panel = _Sink()
+    monkeypatch.setattr(SessionSearchApp, "preview_panel", property(lambda self: panel))
+    app = SessionSearchApp(path, "webhook")
+    app.results = search_sessions(path, "webhook", semantic=False)
+    assert app.results, "fixture must produce a hit for the preview to render"
+
+    app.refresh_preview()
+
+    assert "began: 2023-11-14" in panel.text

@@ -310,6 +310,11 @@ def cmd_search(args: argparse.Namespace) -> int:
         print(f"    id: {result.session_id}")
         if result.git_branch:
             print(f"    branch: {result.git_branch}")
+        if result.created_at:
+            # A session that started after the work cannot have done it. The headline time and
+            # `updated` are both LAST TOUCHED, so without this the only visible date on a hit
+            # is one that every later reader of a topic shares with its author.
+            print(f"    began: {format_time(result.created_at)} UTC")
         if result.updated_at:
             print(f"    updated: {format_time(result.updated_at)} UTC")
         if getattr(args, "show_ext", False) or getattr(args, "branch", None):
