@@ -63,12 +63,24 @@ def build_resume_command(
     return ResumeCommand(provider, session_id, cwd, argv, git_branch)
 
 
+class TranscriptExpired(RuntimeError):
+    """The session is indexed, but the provider deleted the file an agent would resume from."""
+
+
 def load_resume_command(db_path: Path, provider: str, session_id: str, cwd_override: str | None = None) -> ResumeCommand:
     db = IndexDatabase(db_path)
     try:
         row = db.get_session(provider, session_id)
         if row is None:
             raise KeyError(f"No indexed {provider} session with id {session_id}")
+        if row["source_missing"]:
+            # The agent resumes by reading the file, so there is nothing to resume into. The
+            # text stays searchable here, which is the distinction worth stating out loud.
+            raise TranscriptExpired(
+                f"{provider} deleted the transcript for {session_id}, so it cannot be resumed. "
+                "Its messages are still indexed: search them, or read them with "
+                f"`sb show {session_id}`."
+            )
         cwd = cwd_override if cwd_override is not None else str(row["cwd"] or "")
         return build_resume_command(
             provider,
