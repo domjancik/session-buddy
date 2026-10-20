@@ -145,6 +145,11 @@ class IndexDatabase:
         # own creation time - the check that has settled ownership every time it was tried.
         self.ensure_column("session_branches", "seen_at", "integer")
         self.ensure_column("sessions", "title_source", "text not null default 'provider'")
+        # The transcript is deleted by the provider about 30 days after it was written, and
+        # the index is the only copy of its text after that. Measured 2026-10-20: of 266
+        # transcripts on disk, every one older than 30 days sat in a `subagents/` directory
+        # or in `_backups/`, and no top-level transcript survived past the cliff.
+        self.ensure_column("sessions", "source_missing", "integer not null default 0")
         self.conn.execute(
             "update sessions set provider_title = title where provider_title = ''"
         )
@@ -444,6 +449,8 @@ class IndexDatabase:
                     git_branch, source_path, file_mtime, file_size, message_count, first_prompt, summary,
                     preview, stale, titled
                 ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                -- source_missing defaults to 0, so re-reading a file that came back clears it
+                
                 """,
                 (
                     record.provider,
@@ -573,18 +580,61 @@ class IndexDatabase:
         self.conn.execute("delete from sessions where provider = ? and session_id = ?", (provider, session_id))
 
     def mark_seen_sources(self, seen_paths: set[str], prune: bool = False) -> int:
+        """Flag sessions whose transcript is gone, keeping the text this index already holds.
+
+        This used to delete them. A source file disappears because the provider expired it,
+        not because the session stopped mattering, and once it is gone the index holds the
+        only copy of what was said - so deleting on its heels threw away the search corpus
+        this tool exists to serve.
+        """
         if not prune:
             return 0
         rows = self.conn.execute("select source_path, provider, session_id from source_state").fetchall()
-        removed = 0
+        missing = 0
         with self.conn:
             for row in rows:
                 if row["source_path"] in seen_paths:
                     continue
-                self.delete_session(row["provider"], row["session_id"])
+                self.conn.execute(
+                    "update sessions set source_missing = 1 where provider = ? and session_id = ?",
+                    (row["provider"], row["session_id"]),
+                )
+                # The source_state row is a freshness cache keyed by a file that no longer
+                # exists; dropping it stops every later run from re-reporting the same loss.
                 self.conn.execute("delete from source_state where source_path = ?", (row["source_path"],))
-                removed += 1
-        return removed
+                missing += 1
+        return missing
+
+    def forget_missing_sources(self) -> int:
+        """Delete the sessions whose transcript is gone. Only an explicit flag calls this."""
+        rows = self.conn.execute(
+            "select provider, session_id from sessions where source_missing = 1"
+        ).fetchall()
+        with self.conn:
+            for row in rows:
+                self.delete_session(row["provider"], row["session_id"])
+        return len(rows)
+
+    def count_missing_sources(self) -> int:
+        row = self.conn.execute("select count(*) as count from sessions where source_missing = 1").fetchone()
+        return int(row["count"])
+
+    def read_messages(self, provider: str, session_id: str, limit: int | None = None) -> list[sqlite3.Row]:
+        sql = ("select idx, role, timestamp, text from messages "
+               "where provider = ? and session_id = ? order by idx")
+        params: tuple = (provider, session_id)
+        if limit is not None:
+            sql += " limit ?"
+            params = (provider, session_id, limit)
+        return list(self.conn.execute(sql, params).fetchall())
+
+    def find_sessions_by_id(self, session_id: str) -> list[sqlite3.Row]:
+        """Accepts the short id the listings print, which is all a reader ever has to hand."""
+        return list(self.conn.execute(
+            "select provider, session_id, title, source_missing from sessions "
+            "where session_id = ? or session_id like ? order by provider",
+            (session_id, f"{session_id}%"),
+        ).fetchall())
 
     def count_sessions(self) -> int:
         row = self.conn.execute("select count(*) as count from sessions").fetchone()

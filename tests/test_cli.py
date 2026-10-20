@@ -219,3 +219,13 @@ def test_agents_is_a_known_subcommand():
 
     assert args.epic == "BACKFILL"
     assert args.missing is True
+
+
+def test_every_subcommand_is_known_to_the_bare_query_rewriter():
+    """A name missing here is parsed as a search term: `show <id>` ran as `search show <id>`."""
+    from session_buddy.cli import SUBCOMMANDS, build_parser
+
+    registered = {name for action in build_parser()._subparsers._group_actions
+                  for name in action.choices}
+
+    assert registered == set(SUBCOMMANDS)

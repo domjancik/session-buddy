@@ -250,3 +250,107 @@ def test_a_child_chat_names_its_parent(tmp_path):
         (a.session_id, a.key): a.value for a in TraycerAnnotator().collect(home).annotations
     }
     assert emitted[("session-gui", "parent_title")] == "Worktree Agent Coordination Protocol"
+
+
+# --- an expired transcript ------------------------------------------------------------------
+
+def indexed_session(db, session_id: str, source: str, text: str = "the decision table") -> None:
+    db.upsert_session(
+        SessionRecord(
+            provider="claude", session_id=session_id, title=f"t-{session_id}", cwd="/repo",
+            created_at=1, updated_at=2, git_branch="", source_path=source, file_mtime=1,
+            file_size=1, message_count=1, first_prompt="", summary="", preview="",
+            messages=[MessageRecord(provider="claude", session_id=session_id, idx=0,
+                                    role="assistant", timestamp=1, text=text)],
+        ),
+        embedder=None,
+    )
+    db.conn.execute(
+        "insert or replace into source_state (source_path, provider, session_id, file_mtime,"
+        " file_size, indexed_at) values (?, 'claude', ?, 1, 1, 1)",
+        (source, session_id),
+    )
+    db.conn.commit()
+
+
+def test_a_vanished_transcript_keeps_the_text_the_index_already_holds(tmp_path):
+    """The provider expires transcripts at ~30 days; after that the index is the only copy."""
+    db = IndexDatabase(tmp_path / "index.sqlite")
+    try:
+        indexed_session(db, "s1", "/tmp/s1.jsonl")
+
+        assert db.mark_seen_sources(set(), prune=True) == 1
+
+        messages = db.read_messages("claude", "s1")
+        assert [m["text"] for m in messages] == ["the decision table"]
+        assert db.count_missing_sources() == 1
+    finally:
+        db.close()
+
+
+def test_a_transcript_that_comes_back_is_no_longer_missing(tmp_path):
+    db = IndexDatabase(tmp_path / "index.sqlite")
+    try:
+        indexed_session(db, "s1", "/tmp/s1.jsonl")
+        db.mark_seen_sources(set(), prune=True)
+
+        indexed_session(db, "s1", "/tmp/s1.jsonl")
+
+        assert db.count_missing_sources() == 0
+    finally:
+        db.close()
+
+
+def test_forgetting_a_missing_source_is_what_deletes_it(tmp_path):
+    """Deletion still exists, behind a flag, for a session the user wants gone."""
+    db = IndexDatabase(tmp_path / "index.sqlite")
+    try:
+        indexed_session(db, "s1", "/tmp/s1.jsonl")
+        indexed_session(db, "s2", "/tmp/s2.jsonl")
+        db.mark_seen_sources({"/tmp/s2.jsonl"}, prune=True)
+
+        assert db.forget_missing_sources() == 1
+
+        assert db.read_messages("claude", "s1") == []
+        assert db.get_session("claude", "s1") is None
+        # The session still on disk is untouched: forgetting is scoped to what expired.
+        assert db.get_session("claude", "s2") is not None
+    finally:
+        db.close()
+
+
+def test_resume_refuses_an_expired_transcript_and_says_the_text_survives(tmp_path):
+    from session_buddy.resume import TranscriptExpired, load_resume_command
+
+    db = IndexDatabase(tmp_path / "index.sqlite")
+    try:
+        indexed_session(db, "s1", "/tmp/s1.jsonl")
+        db.mark_seen_sources(set(), prune=True)
+    finally:
+        db.close()
+
+    with pytest.raises(TranscriptExpired) as caught:
+        load_resume_command(tmp_path / "index.sqlite", "claude", "s1")
+
+    assert "still indexed" in str(caught.value)
+
+
+def test_show_prints_the_indexed_messages_of_an_expired_session(tmp_path, capsys):
+    import argparse
+
+    from session_buddy.cli import cmd_show
+
+    db = IndexDatabase(tmp_path / "index.sqlite")
+    try:
+        indexed_session(db, "s1", "/tmp/s1.jsonl", text="compute() returns handled")
+        db.mark_seen_sources(set(), prune=True)
+    finally:
+        db.close()
+
+    code = cmd_show(argparse.Namespace(db=tmp_path / "index.sqlite", session_id="s1",
+                                       provider=None, limit=None))
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "compute() returns handled" in out
+    assert "deleted this transcript" in out

@@ -303,6 +303,34 @@ claude   849dc057  DIS-1432 tier/force labels   epic=TEMPORAL FIXES  parent=Debu
 These cannot be searched or resumed. The name, epic and parent are enough to find the work by
 other means, which is the point of showing them.
 
+### Why the count grows
+
+Most of them were never transcript-less. The provider expires transcripts: measured on one
+machine on 2026-10-20, of 266 files on disk **every one older than 30 days sat in a
+`subagents/` directory or in `_backups/`**, and no top-level transcript survived past that
+cliff. The annotation outlives the file, so the orphan count rises at the rate transcripts
+expire — 212 on 2026-10-08, 258 twelve days later.
+
+The index used to follow the file down. Pruning deleted the session, its messages and its
+branch rows, so the text this tool exists to search was thrown away on the heels of the only
+other copy. One session had been read out of the index eight days after its transcript went,
+and was gone by the next reindex.
+
+Now a vanished source is flagged, not deleted:
+
+```sh
+sb index --prune              # "Transcript gone, index kept: 1"
+sb show 853942b8              # the indexed messages, the only reader left
+sb index --prune --forget-missing   # delete them for real. Not reversible.
+```
+
+A session whose transcript expired still answers every search. `sb resume` refuses it, and
+says why rather than reporting it as unknown. If the file comes back, re-indexing clears the
+flag.
+
+The provider's retention window is a setting on the provider, not on this tool — raising it
+keeps the original files around longer, which is worth doing separately.
+
 ## Index Status
 
 ```sh
