@@ -253,7 +253,7 @@ class SessionSearchApp(App[ResumeCommand | None]):
 
     def detail_lines_for(self, result: SearchResult) -> list[str]:
         """Branches and annotator metadata, rendered exactly as the CLI renders them."""
-        db = IndexDatabase(self.db_path)
+        db = IndexDatabase(self.db_path, read_only=True)
         try:
             return detail_lines(db, result.provider, result.session_id)
         except sqlite3.Error:

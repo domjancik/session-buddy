@@ -370,3 +370,99 @@ def test_a_subagents_messages_carry_its_own_id(tmp_path):
     child = parse_claude_session(write_claude_session(tmp_path, subagent=True), None, "/repo")
 
     assert {m.session_id for m in child.messages} == {child.session_id}
+
+
+# --- reads must not take the write lock -----------------------------------------------------
+
+def test_a_read_only_open_cannot_write(tmp_path):
+    """Every read command opens this way, so a writer holding the lock cannot fail them."""
+    path = tmp_path / "index.sqlite"
+    IndexDatabase(path).close()
+
+    db = IndexDatabase(path, read_only=True)
+    try:
+        assert db.read_only
+        with pytest.raises(sqlite3.OperationalError):
+            db.conn.execute("insert into sessions (provider, session_id, title, cwd, git_branch,"
+                            " source_path, file_mtime, file_size, message_count, first_prompt,"
+                            " summary, preview, stale) values ('claude','x','t','/r','','/p',"
+                            "1,1,0,'','','',0)")
+    finally:
+        db.close()
+
+
+def test_a_read_survives_a_writer_holding_the_lock(tmp_path):
+    """The reported failure: `sb owner` died on `database is locked` during a prune."""
+    path = tmp_path / "index.sqlite"
+    IndexDatabase(path).close()
+
+    writer = IndexDatabase(path)
+    try:
+        writer.conn.execute("begin exclusive")
+        reader = IndexDatabase(path, read_only=True)
+        try:
+            assert reader.conn.execute("select count(*) from sessions").fetchone()[0] == 0
+        finally:
+            reader.close()
+    finally:
+        writer.conn.rollback()
+        writer.close()
+
+
+def test_the_provider_title_backfill_does_not_run_when_nothing_needs_it(tmp_path):
+    """Unguarded it took the write lock on every construction to update 0 rows of 1,097."""
+    path = tmp_path / "index.sqlite"
+    db = IndexDatabase(path)
+    db.close()
+
+    statements: list[str] = []
+    conn = sqlite3.connect(path)
+    conn.set_trace_callback(statements.append)
+    original = sqlite3.connect
+    try:
+        sqlite3.connect = lambda *a, **k: conn  # type: ignore[assignment]
+        IndexDatabase(path)
+    finally:
+        sqlite3.connect = original  # type: ignore[assignment]
+        conn.close()
+
+    assert not any(s.strip().lower().startswith("update sessions set provider_title")
+                   for s in statements), statements
+
+
+def test_the_backfill_still_runs_when_a_row_needs_it(tmp_path):
+    path = tmp_path / "index.sqlite"
+    db = IndexDatabase(path)
+    try:
+        db.conn.execute(
+            "insert into sessions (provider, session_id, title, provider_title, cwd, git_branch,"
+            " source_path, file_mtime, file_size, message_count, first_prompt, summary, preview,"
+            " stale) values ('claude','x','derived','','/r','','/p',1,1,0,'','','',0)")
+        db.conn.commit()
+    finally:
+        db.close()
+
+    db = IndexDatabase(path)
+    try:
+        row = db.conn.execute("select provider_title from sessions where session_id='x'").fetchone()
+        assert row["provider_title"] == "derived"
+    finally:
+        db.close()
+
+
+def test_an_older_index_is_migrated_even_though_the_read_asked_for_read_only(tmp_path):
+    """A read-only open cannot add a column, so a stale schema has to fall back to writing."""
+    path = tmp_path / "index.sqlite"
+    IndexDatabase(path).close()
+    conn = sqlite3.connect(path)
+    conn.execute("alter table sessions drop column source_missing")
+    conn.commit()
+    conn.close()
+
+    db = IndexDatabase(path, read_only=True)
+    try:
+        assert not db.read_only
+        columns = {row["name"] for row in db.conn.execute("pragma table_info(sessions)")}
+        assert "source_missing" in columns
+    finally:
+        db.close()

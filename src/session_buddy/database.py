@@ -11,15 +11,46 @@ from .models import AnnotatedTitle, Annotation, BranchRef, MessageRecord, Sessio
 from .text import truncate
 
 
+# A prune over a large index runs for minutes and the SessionEnd hook fires it after every
+# session, so on an active machine the write lock is held nearly continuously. Under WAL a
+# reader never needs that lock - unless it opens read-write and runs schema work on the way
+# in, which is what turned every `sb owner` into a writer that died on `database is locked`.
+BUSY_TIMEOUT_MS = 10_000
+
+
 class IndexDatabase:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, read_only: bool = False) -> None:
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.read_only = read_only and path.exists()
+        if not self.read_only:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self.read_only:
+            self.conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute(f"pragma busy_timeout={BUSY_TIMEOUT_MS}")
+            if self.schema_is_current():
+                return
+            # An index written by an older version is missing a column this build reads, and
+            # migrating it needs the write lock after all. Reopen and pay for it once.
+            self.conn.close()
+            self.read_only = False
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("pragma journal_mode=wal")
         self.conn.execute("pragma synchronous=normal")
+        self.conn.execute(f"pragma busy_timeout={BUSY_TIMEOUT_MS}")
         self.init_schema()
+
+    def schema_is_current(self) -> bool:
+        """Cheap enough to run on every read: two pragmas, no lock."""
+        try:
+            sessions = {row["name"] for row in self.conn.execute("pragma table_info(sessions)")}
+            branches = {row["name"] for row in
+                        self.conn.execute("pragma table_info(session_branches)")}
+        except sqlite3.DatabaseError:
+            return False
+        return ({"provider_title", "titled", "title_source", "source_missing"} <= sessions
+                and "seen_at" in branches)
 
     def close(self) -> None:
         self.conn.close()
@@ -151,9 +182,16 @@ class IndexDatabase:
         # transcripts on disk, every one older than 30 days sat in a `subagents/` directory
         # or in `_backups/`, and no top-level transcript survived past the cliff.
         self.ensure_column("sessions", "source_missing", "integer not null default 0")
-        self.conn.execute(
-            "update sessions set provider_title = title where provider_title = ''"
-        )
+        # Guarded: this is a one-time backfill, and unguarded it took the write lock on every
+        # single construction - including every read - to update nothing. Measured on one
+        # index: 0 rows of 1,097 matched, and the lock it took was enough to fail the command.
+        pending = self.conn.execute(
+            "select 1 from sessions where provider_title = '' limit 1"
+        ).fetchone()
+        if pending is not None:
+            self.conn.execute(
+                "update sessions set provider_title = title where provider_title = ''"
+            )
         self.conn.commit()
 
     def ensure_column(self, table: str, column: str, definition: str) -> None:

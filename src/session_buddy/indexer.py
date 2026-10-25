@@ -221,7 +221,9 @@ def check_index_freshness(
     opencode_home: Path | None = None,
     pi_home: Path | None = None,
 ) -> FreshnessStats:
-    db = IndexDatabase(db_path)
+    # `sb status` and the staleness line every command prints: reads only, and the one the
+    # agent found still working precisely because it never opened for writing.
+    db = IndexDatabase(db_path, read_only=True)
     try:
         return check_index_freshness_db(db, claude_home, codex_home, opencode_home, pi_home)
     finally:

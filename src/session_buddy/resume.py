@@ -68,7 +68,7 @@ class TranscriptExpired(RuntimeError):
 
 
 def load_resume_command(db_path: Path, provider: str, session_id: str, cwd_override: str | None = None) -> ResumeCommand:
-    db = IndexDatabase(db_path)
+    db = IndexDatabase(db_path, read_only=True)
     try:
         row = db.get_session(provider, session_id)
         if row is None:

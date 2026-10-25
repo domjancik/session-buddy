@@ -58,7 +58,7 @@ def search_sessions(
     until: str | None = None,
     exclude: list[str] | None = None,
 ) -> list[SearchResult]:
-    db = IndexDatabase(db_path)
+    db = IndexDatabase(db_path, read_only=True)
     try:
         return SearchEngine(db.conn).search(
             query, limit, provider, cwd, semantic, ext, branch, since, until, exclude
