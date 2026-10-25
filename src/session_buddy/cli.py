@@ -318,7 +318,7 @@ def cmd_search(args: argparse.Namespace) -> int:
         if result.updated_at:
             print(f"    updated: {format_time(result.updated_at)} UTC")
         if getattr(args, "show_ext", False) or getattr(args, "branch", None):
-            db = IndexDatabase(args.db)
+            db = IndexDatabase(args.db, read_only=True)
             try:
                 for line in detail_lines(db, result.provider, result.session_id):
                     print(f"    {line}")
@@ -352,7 +352,7 @@ def cmd_tui(args: argparse.Namespace) -> int:
 
 
 def cmd_owner(args: argparse.Namespace) -> int:
-    db = IndexDatabase(args.db)
+    db = IndexDatabase(args.db, read_only=True)
     try:
         rows = db.branch_owners(args.branch)
     finally:
@@ -411,7 +411,7 @@ def cmd_owner(args: argparse.Namespace) -> int:
 
 
 def cmd_agents(args: argparse.Namespace) -> int:
-    db = IndexDatabase(args.db)
+    db = IndexDatabase(args.db, read_only=True)
     try:
         rows = db.list_annotated_sessions(epic=args.epic, missing_only=args.missing)
     finally:
@@ -442,7 +442,7 @@ def cmd_agents(args: argparse.Namespace) -> int:
 
 
 def cmd_groups(args: argparse.Namespace) -> int:
-    db = IndexDatabase(args.db)
+    db = IndexDatabase(args.db, read_only=True)
     try:
         groups = db.list_groups(args.source)
     finally:
@@ -518,7 +518,7 @@ def print_messages(messages) -> None:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    db = IndexDatabase(args.db)
+    db = IndexDatabase(args.db, read_only=True)
     try:
         matches = [r for r in db.find_sessions_by_id(args.session_id)
                    if not args.provider or r["provider"] == args.provider]

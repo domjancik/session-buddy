@@ -355,6 +355,20 @@ This matters more than the count suggests: subagent files escape the provider's 
 sweep, so they outlive every top-level transcript, and the real work often happens in the
 child while the parent holds only the handoff.
 
+### Reads do not take the write lock
+
+A prune over a large index runs for minutes, and the `SessionEnd` hook fires one after every
+session, so on an active machine a writer holds the lock nearly continuously. Under WAL that
+is invisible to readers — unless a read opens the database read-write and does schema work on
+the way in, which is what `IndexDatabase` used to do on every construction, including an
+unconditional `update sessions set provider_title = title where provider_title = ''` that
+matched 0 rows of 1,097. Every `sb owner`, `sb search` and `sb agents` was a writer, and died
+with `database is locked` for as long as an index run lasted.
+
+`search`, `owner`, `agents`, `groups`, `show`, `resume`, `status` and the TUI now open
+`mode=ro`. The backfill is guarded by a lookup, and an index written by an older build still
+falls back to a read-write open so its missing columns can be added once.
+
 ## Index Status
 
 ```sh
